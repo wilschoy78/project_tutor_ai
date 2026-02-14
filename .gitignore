@@ -31,3 +31,6 @@ moodle_moodledata/
 
 # Logs
 *.log
+
+# Personal Notes
+files/MY_NOTES.md
