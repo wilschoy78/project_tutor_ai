@@ -1,0 +1,25 @@
+{
+    # Use the environment variable for the domain
+    email admin@example.com
+}
+
+{$DOMAIN_NAME} {
+    # Proxy /api requests to the backend (Preserve path)
+    reverse_proxy /api/v1/* backend:8000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+    }
+
+    # Proxy all other requests to the frontend
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    # Add security headers
+    header {
+        # Enable cross-site usage (required for Moodle IFrame)
+        Access-Control-Allow-Origin "*"
+        X-Frame-Options "ALLOWALL" 
+        Content-Security-Policy "frame-ancestors https://bcccs.octanity.net https://*.octanity.net;"
+    }
+}

@@ -1,0 +1,28 @@
+services:
+  # Monolithic Service (Frontend + Backend)
+  - type: web
+    name: teacher-tutor-ai
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter # 'free' tier spins down, 'starter' ($7/mo) is always on
+    
+    # Persistent Disk for ChromaDB (Vector Store)
+    # Essential! Without this, your AI forgets everything on restart.
+    disk:
+      name: chroma_data
+      mountPath: /app/chroma_db
+      sizeGB: 1
+
+    envVars:
+      - key: MOODLE_URL
+        value: https://bcccs.octanity.net/lms
+      - key: MOODLE_TOKEN
+        sync: false # You will enter this in Render Dashboard
+      - key: GROQ_API_KEY
+        sync: false # You will enter this in Render Dashboard
+      - key: LLM_PROVIDER
+        value: groq
+      - key: USE_MOCK_MOODLE
+        value: "True" # Set to False when ready for real data
+      - key: PROJECT_NAME
+        value: "Teacher-Tutor AI"

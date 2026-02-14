@@ -1,0 +1,33 @@
+# Dependencies
+venv/
+node_modules/
+.env
+
+# Build outputs
+dist/
+build/
+*.zip
+*.tar.gz
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# IDEs
+.vscode/
+.idea/
+
+# Database & Storage
+chroma_db/
+moodle_db_data/
+moodle_data/
+moodle_moodledata/
+*.sqlite3
+
+# Logs
+*.log

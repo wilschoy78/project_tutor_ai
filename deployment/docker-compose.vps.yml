@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Backend Service (FastAPI)
+  backend:
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ai_tutor_backend
+    restart: always
+    environment:
+      - MOODLE_URL=https://bcccs.octanity.net/lms
+      # NOTE: Replace with your actual Moodle Token if needed
+      - MOODLE_TOKEN=${MOODLE_TOKEN:-b20ea69c39b5def946b9be1d5171f697}
+      
+      # Use Groq for fast inference
+      - LLM_PROVIDER=groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - MODEL_NAME=llama-3.1-8b-instant
+      
+      - PROJECT_NAME="Teacher-Tutor AI"
+      # In production, we should try to use real Moodle if token is valid
+      - USE_MOCK_MOODLE=${USE_MOCK_MOODLE:-True}
+    networks:
+      - ai_tutor_net
+
+  # Frontend Service (Nginx serving React)
+  frontend:
+    build: 
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: ai_tutor_frontend
+    restart: always
+    environment:
+      # This variable is used during build time in the Dockerfile
+      - VITE_API_URL=/api/v1
+    networks:
+      - ai_tutor_net
+
+  # Reverse Proxy (Caddy) - Handles SSL and Routing
+  caddy:
+    image: caddy:latest
+    container_name: ai_tutor_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME:-139.180.143.176.nip.io}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - ai_tutor_net
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  ai_tutor_net:

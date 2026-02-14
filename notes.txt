@@ -1,0 +1,14 @@
+Moodle Credentials:
+
+- Username: admin
+- Password: Admin123!
+
+- Username: alice
+- Password: Moodle123!
+- Username: bob
+- Password: Moodle123!
+
+
+trae-sandbox 'docker compose up -d --build frontend'
+trae-sandbox 'docker compose up -d --build backend'
+docker compose up -d --build

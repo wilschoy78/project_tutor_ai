@@ -1,0 +1,63 @@
+services:
+  backend:
+    build: ./backend
+    container_name: ai-tutor-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MOODLE_URL=http://moodle:80
+      - MOODLE_TOKEN=f138f3289380e916e6ac7e6ba3aafc47
+      - LLM_PROVIDER=groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - MODEL_NAME=llama-3.1-8b-instant
+      - USE_MOCK_MOODLE=False
+    volumes:
+      - ./backend/chroma_db:/app/chroma_db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build: ./frontend
+    container_name: ai-tutor-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  mariadb:
+    image: mariadb:10.6
+    container_name: moodle-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=moodle
+      - MYSQL_PASSWORD=moodle
+      - MYSQL_DATABASE=moodle
+      - MYSQL_CMD=--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - 'moodle_db_data:/var/lib/mysql'
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
+
+  moodle:
+    build: ./moodle_build
+    container_name: moodle
+    ports:
+      - '8080:80'
+    environment:
+      - MOODLE_DBTYPE=mariadb
+      - MOODLE_DBHOST=mariadb
+      - MOODLE_DBNAME=moodle
+      - MOODLE_DBUSER=moodle
+      - MOODLE_DBPASSWORD=moodle
+    volumes:
+      - 'moodle_data:/var/www/html'
+      - 'moodle_moodledata:/var/www/moodledata'
+      - './moodle_plugin/block_ai_tutor:/var/www/html/blocks/ai_tutor'
+      - './moodle_plugin/local_ai_tutor:/var/www/html/local/ai_tutor'
+    depends_on:
+      - mariadb
+
+volumes:
+  moodle_db_data:
+  moodle_data:
+  moodle_moodledata:

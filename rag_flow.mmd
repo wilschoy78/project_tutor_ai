@@ -1,0 +1,37 @@
+graph TD
+    %% Styling
+    classDef moodle fill:#f9f,stroke:#333,stroke-width:2px,color:black;
+    classDef backend fill:#bbf,stroke:#333,stroke-width:2px,color:black;
+    classDef db fill:#bfb,stroke:#333,stroke-width:2px,color:black;
+    classDef frontend fill:#fbb,stroke:#333,stroke-width:2px,color:black;
+
+    subgraph MoodleLMS ["Moodle LMS (Source)"]
+        direction TB
+        Content["Course Content<br/>(PDFs, Pages, Quizzes)"]:::moodle
+    end
+
+    subgraph AI_Backend ["AI Backend & RAG Engine"]
+        direction TB
+        Ingest["RagService Ingestion"]:::backend
+        Embed["Embedding Model<br/>(Ollama/Mistral)"]:::backend
+        VectorDB[("ChromaDB<br/>Vector Store")]:::db
+        Retriever["Similarity Search"]:::backend
+        LLM["Generative Model<br/>(Llama 3)"]:::backend
+    end
+
+    subgraph StudentUI ["Student Interface"]
+        Query["Student Question"]:::frontend
+        Response["AI Response"]:::frontend
+    end
+
+    %% Data Ingestion Flow
+    Content -->|1. Fetch Content via API| Ingest
+    Ingest -->|2. Chunk & Process| Embed
+    Embed -->|3. Store Vectors| VectorDB
+
+    %% Query & Response Flow
+    Query -->|4. Send Query| Retriever
+    Retriever -->|5. Retrieve Context| VectorDB
+    VectorDB -- Relevant Chunks --> Retriever
+    Retriever -->|6. Prompt + Context| LLM
+    LLM -->|7. Generate Answer| Response
