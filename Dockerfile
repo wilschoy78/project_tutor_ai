@@ -41,7 +41,7 @@ COPY --from=frontend-build /app/frontend/dist /frontend/dist
 ENV PORT=8000
 ENV HOST=0.0.0.0
 ENV MOODLE_URL=https://bcccs.octanity.net/lms
-ENV USE_MOCK_MOODLE=True
+ENV ENABLE_MOCK_MOODLE=False
 ENV LLM_PROVIDER=groq
 ENV MODEL_NAME=llama-3.1-8b-instant
 

@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # Moodle Settings
     MOODLE_URL: str
     MOODLE_TOKEN: Optional[str] = None
-    USE_MOCK_MOODLE: bool = False
+    ENABLE_MOCK_MOODLE: bool = False
     
     # AI Settings
     LLM_PROVIDER: str = "ollama"  # options: "ollama", "mistral_api", "groq"
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "mistral"
 
     class Config:
-        env_file = "/Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/.env"
+        env_file = ".env"
         env_file_encoding = 'utf-8'
         case_sensitive = True
         extra = "ignore"
@@ -26,4 +26,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 print(f"DEBUG: Loaded MOODLE_URL={settings.MOODLE_URL}")
-print(f"DEBUG: Loaded USE_MOCK_MOODLE={settings.USE_MOCK_MOODLE}")
+print(f"DEBUG: Loaded ENABLE_MOCK_MOODLE={settings.ENABLE_MOCK_MOODLE}")

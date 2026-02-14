@@ -22,7 +22,7 @@ services:
         sync: false # You will enter this in Render Dashboard
       - key: LLM_PROVIDER
         value: groq
-      - key: USE_MOCK_MOODLE
-        value: "True" # Set to False when ready for real data
+      - key: ENABLE_MOCK_MOODLE
+        value: "False" # Set to False when ready for real data
       - key: PROJECT_NAME
         value: "Teacher-Tutor AI"
