@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # Moodle Settings
     MOODLE_URL: str
     MOODLE_TOKEN: Optional[str] = None
-    USE_MOCK_MOODLE: bool = True
+    USE_MOCK_MOODLE: bool = False
     
     # AI Settings
     LLM_PROVIDER: str = "ollama"  # options: "ollama", "mistral_api", "groq"

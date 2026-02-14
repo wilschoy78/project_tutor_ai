@@ -123,7 +123,4 @@ class MockMoodleClient(MoodleClient):
         return {}
 
 # Use Mock client if connection fails or explicitly requested
-if settings.USE_MOCK_MOODLE:
-    moodle_client = MockMoodleClient()
-else:
-    moodle_client = MoodleClient()
+moodle_client = MoodleClient() if not settings.USE_MOCK_MOODLE else MockMoodleClient()
