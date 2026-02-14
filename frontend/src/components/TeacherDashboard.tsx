@@ -236,55 +236,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                 <h2 className="text-lg font-bold text-gray-900">Student Performance</h2>
                             </div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm text-gray-600">
-                                    <thead className="bg-gray-50 text-gray-900 font-semibold uppercase text-xs">
-                                        <tr>
-                                            <th className="px-6 py-4">Student Name</th>
-                                            <th className="px-6 py-4">Learning Style</th>
-                                            <th className="px-6 py-4">Modules Completed</th>
-                                            <th className="px-6 py-4">Quizzes Taken</th>
-                                            <th className="px-6 py-4">Avg. Score</th>
-                                            <th className="px-6 py-4">Status</th>
-                                            <th className="px-6 py-4">Action</th>
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="border-b text-gray-500 text-sm">
+                                            <th className="pb-3">Student Name</th>
+                                            <th className="pb-3">Learning Style</th>
+                                            <th className="pb-3">Avg Score</th>
+                                            <th className="pb-3">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-200">
-                                        {analytics.students.map((student) => (
-                                            <tr key={student.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4 font-medium text-gray-900">{student.name}</td>
-                                                <td className="px-6 py-4">
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                        {student.learning_style}
+                                    <tbody className="divide-y">
+                                        {analytics.students?.map((student: any) => (
+                                            <tr key={student.id} className="group hover:bg-gray-50">
+                                                <td className="py-3 font-medium">{student.name}</td>
+                                                <td className="py-3 text-sm text-gray-600">
+                                                    <span className={`px-2 py-1 rounded-full text-xs ${
+                                                        (student.learning_style as string) === 'Visual' ? 'bg-blue-100 text-blue-800' :
+                                                        (student.learning_style as string) === 'Auditory' ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        {String(student.learning_style)}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4">{student.completed_modules_count}</td>
-                                                <td className="px-6 py-4">{student.quizzes_taken}</td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`font-bold ${student.quiz_average >= 80 ? 'text-green-600' : student.quiz_average >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
-                                                            {student.quiz_average}%
-                                                        </span>
-                                                        <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                                            <div 
-                                                                className={`h-full rounded-full ${student.quiz_average >= 80 ? 'bg-green-500' : student.quiz_average >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                                                style={{ width: `${student.quiz_average}%` }}
-                                                            ></div>
+                                                <td className="py-3 text-sm">
+                                                    {student.avg_score}%
+                                                    {student.quiz_scores && Object.keys(student.quiz_scores).length > 0 && (
+                                                        <div className="text-xs text-gray-500 mt-1">
+                                                            {Object.entries(student.quiz_scores).map(([quiz, score]) => (
+                                                                <div key={quiz}>{quiz}: {String(score)}%</div>
+                                                            ))}
                                                         </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    {student.quiz_average < 60 && student.quizzes_taken > 0 ? (
-                                                        <span className="text-red-600 flex items-center gap-1 text-xs font-bold">
-                                                            <Activity className="w-3 h-3" /> Needs Attention
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-green-600 text-xs font-bold">On Track</span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td className="py-3">
                                                     <button 
-                                                        className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 text-gray-700 font-medium transition-colors"
                                                         onClick={() => handleViewPlan(student.id, student.name)}
+                                                        className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                                                     >
                                                         View Plan
                                                     </button>

@@ -128,80 +128,60 @@ class StudentService:
 
     def get_course_analytics(self, course_id: int) -> Dict[str, Any]:
         """
-        Aggregates data for a teacher dashboard using real Moodle data.
+        Aggregates analytics for the entire class.
         """
-        analytics = {
-            "course_id": course_id,
-            "total_students": 0,
-            "average_score": 0,
-            "students": []
-        }
-        
         try:
             # 1. Get Enrolled Users
             enrolled_users = moodle_client._call_moodle("core_enrol_get_enrolled_users", {"courseid": course_id})
             
-            if not enrolled_users:
-                return analytics
+            total_students = len(enrolled_users)
+            active_students = 0 # Placeholder logic
             
-            # Check for Moodle API exception (returned as dict)
-            if isinstance(enrolled_users, dict) and "exception" in enrolled_users:
-                print(f"ERROR: Moodle API exception: {enrolled_users}")
-                return analytics
-
-            if not isinstance(enrolled_users, list):
-                print(f"ERROR: Unexpected response format: {enrolled_users}")
-                return analytics
-                
-            total_score_sum = 0
-            total_quizzes_count = 0
+            scores = []
             
-            for user in enrolled_users:
-                # Filter out teachers/admins
-                roles = user.get('roles', [])
-                is_staff = False
-                for role in roles:
-                    if role.get('shortname') in ['editingteacher', 'teacher', 'manager', 'coursecreator']:
-                        is_staff = True
-                        break
-                
-                if is_staff:
-                    continue
+            # 2. Detailed Student Analytics (New)
+            detailed_students = []
 
-                student_id = user["id"]
+            # Limit detailed fetch to first 20 students to avoid performance hit on large classes
+            for user in enrolled_users[:20]:
+                uid = user["id"]
                 fullname = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip()
                 
-                # Get progress
-                prog = self.get_student_progress(student_id, course_id)
-                scores = list(prog["quiz_scores"].values())
-                avg = sum(scores) / len(scores) if scores else 0
+                # Fetch individual progress
+                progress = self.get_student_progress(uid, course_id)
                 
-                # Determine mock learning style for visualization
-                learning_styles = ["Visual", "Textual", "Auditory", "Kinesthetic"]
-                style = learning_styles[student_id % len(learning_styles)]
+                # Calculate average score for this student
+                student_scores = list(progress.get("quiz_scores", {}).values())
+                avg_score = sum(student_scores) / len(student_scores) if student_scores else 0
                 
-                student_data = {
-                    "id": student_id,
+                if avg_score > 0:
+                    active_students += 1
+                    scores.append(avg_score)
+                
+                detailed_students.append({
+                    "id": uid,
                     "name": fullname,
-                    "learning_style": style,
-                    "completed_modules_count": len(prog["completed_modules"]),
-                    "quiz_average": round(avg, 1),
-                    "quizzes_taken": len(scores),
-                    "last_activity": "Today" # Mock
-                }
-                
-                analytics["students"].append(student_data)
-                
-                if scores:
-                    total_score_sum += sum(scores)
-                    total_quizzes_count += len(scores)
-
-            analytics["total_students"] = len(analytics["students"])
-            analytics["average_score"] = round(total_score_sum / total_quizzes_count, 1) if total_quizzes_count > 0 else 0
+                    "avg_score": round(avg_score, 1),
+                    "quiz_scores": progress.get("quiz_scores", {}),
+                    "learning_style": self.get_student_profile(uid)["learning_style"]
+                })
+            
+            class_average = sum(scores) / len(scores) if scores else 0
+            
+            return {
+                "total_students": total_students,
+                "active_students": active_students if active_students > 0 else total_students, # Fallback if no grades yet
+                "average_score": round(class_average, 1),
+                "students": detailed_students
+            }
             
         except Exception as e:
             print(f"Error fetching course analytics: {e}")
-            
-        return analytics
+            return {
+                "total_students": 0,
+                "active_students": 0,
+                "average_score": 0,
+                "students": []
+            }
 
 student_service = StudentService()
