@@ -15,7 +15,7 @@ except ImportError:
 from typing import List, Dict, Any
 from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
-from langchain_community.embeddings import HuggingFaceEmbeddings # Added for local CPU embeddings
+from langchain_community.embeddings import FastEmbedEmbeddings # Lightweight CPU embeddings
 try:
     from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
 except ImportError:
@@ -57,14 +57,13 @@ class RAGService:
             if not settings.GROQ_API_KEY:
                 raise ValueError("GROQ_API_KEY is required when using 'groq' provider.")
             
-            print("Initializing RAG with Groq & HuggingFace (CPU) Embeddings...")
+            print("Initializing RAG with Groq & FastEmbed (Lightweight CPU) Embeddings...")
             # Groq is purely for Inference (LLM), not Embeddings.
-            # We use HuggingFaceEmbeddings (all-MiniLM-L6-v2) which runs locally on CPU.
-            # This allows the backend to be deployed anywhere (Render, Fly.io) without a GPU
-            # and without needing a separate paid API for embeddings.
+            # We use FastEmbedEmbeddings which is extremely lightweight and faster than HuggingFace/PyTorch.
+            # This allows deployment on 512MB RAM instances (like Render Free Tier).
             
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name="all-MiniLM-L6-v2"
+            self.embeddings = FastEmbedEmbeddings(
+                model_name="BAAI/bge-small-en-v1.5"
             )
             
             self.llm = ChatGroq(
