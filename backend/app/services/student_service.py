@@ -78,6 +78,9 @@ class StudentService:
             # 1. Fetch Grades
             grades_data = moodle_client._call_moodle("gradereport_user_get_grade_items", {"courseid": course_id, "userid": student_id})
             
+            # DEBUG LOGGING
+            # print(f"DEBUG: Grades response for user {student_id}: {grades_data}")
+            
             quiz_scores = {}
             if "usergrades" in grades_data and grades_data["usergrades"]:
                 for item in grades_data["usergrades"][0]["gradeitems"]:
