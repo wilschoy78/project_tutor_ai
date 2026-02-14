@@ -50,7 +50,11 @@ class MoodleClient:
         # or we might need to use core_course_get_courses_by_field if strict
         # Let's try to get all courses available to the user
         # Note: 'core_course_get_courses' might return all courses if user is admin
-        return self._call_moodle("core_course_get_courses")
+        try:
+            return self._call_moodle("core_course_get_courses")
+        except:
+             # Fallback to core_course_get_courses_by_field if the first one fails or returns empty unexpectedly
+            return self._call_moodle("core_course_get_courses_by_field")
 
     def get_course_contents(self, course_id: int) -> List[Dict[str, Any]]:
         """
