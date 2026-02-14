@@ -105,7 +105,7 @@ class RAGService:
         cleantext = re.sub(cleanr, '', raw_html)
         return cleantext.strip()
 
-    def ingest_course_content(self, course_id: int):
+    def ingest_course_content(self, course_id: int) -> Dict[str, Any]:
         """
         Fetches content from Moodle (or Mock), chunks it, and stores in Vector DB.
         """
@@ -133,6 +133,16 @@ class RAGService:
 
         # 1. Fetch content
         contents = moodle_client.get_course_contents(course_id)
+        
+        # 1.5 Fetch User Activities (Grades & Completion) - NEW FEATURE
+        # Note: In a real multi-user RAG, you might not want to ingest specific student grades into the GLOBAL vector store 
+        # because that would make Student A's grades visible to Student B via RAG.
+        # HOWEVER, if this is for the *Teacher's* Knowledge Base (to ask "Who failed the quiz?"), then it makes sense.
+        # We will ingest it but label it clearly. 
+        # CAUTION: For privacy, ensure the RAG prompt respects user roles, or only ingest this for the teacher's view.
+        # For now, we will fetch generic activity structure, not individual student grades for the RAG.
+        # If the user wants to ingest *aggregated* stats, that's safer.
+        
         documents = []
         
         # 2. Process content into Documents
@@ -150,6 +160,15 @@ class RAGService:
                     desc_clean = self._clean_html(module["description"])
                     if desc_clean:
                         content_text += f"Description: {desc_clean}\n"
+                
+                # Check for Quiz-specific data if available in course contents (usually limited)
+                if mod_type == "quiz":
+                    # In standard core_course_get_contents, quiz details are minimal (just intro/dates).
+                    # Deep quiz question extraction requires mod_quiz_get_quizzes_by_courses, 
+                    # but that's a separate API call we might add later if needed.
+                    # For now, we rely on the description and any attached files.
+                    if "dates" in module:
+                        content_text += f"Dates: {module['dates']}\n"
                 
                 # 2. Get Page Content (specific to 'page' modname) or generic 'contents'
                 # Moodle returns a list 'contents' for resources/pages

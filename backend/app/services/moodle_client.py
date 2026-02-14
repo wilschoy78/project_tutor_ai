@@ -62,6 +62,27 @@ class MoodleClient:
         """
         return self._call_moodle("core_course_get_contents", {"courseid": course_id})
 
+    def get_user_activities(self, course_id: int, user_id: int) -> Dict[str, Any]:
+        """
+        Get student's activity completion status and grades.
+        """
+        # Fetch completion status
+        completion_data = self._call_moodle("core_completion_get_course_completion_status", {
+            "courseid": course_id,
+            "userid": user_id
+        })
+        
+        # Fetch grades
+        grades_data = self._call_moodle("gradereport_user_get_grade_items", {
+            "courseid": course_id,
+            "userid": user_id
+        })
+        
+        return {
+            "completion": completion_data,
+            "grades": grades_data
+        }
+
     def download_file(self, file_url: str) -> Optional[bytes]:
         """
         Download a file from Moodle using the token.
