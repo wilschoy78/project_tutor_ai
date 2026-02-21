@@ -84,13 +84,7 @@ interface ChatInterfaceProps {
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, initialStudentId }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Hello! I am your AI Tutor. I can help you with your course materials. What would you like to know today?'
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeCourseId, setActiveCourseId] = useState(initialCourseId || 2); // Default to Course 2 (Intro to AI Tutor)
@@ -116,7 +110,49 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         };
         fetchCourses();
     }
-  }, [initialCourseId, initialStudentId]);
+  }, [initialCourseId, initialStudentId, activeCourseId]);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const history = await chatApi.getHistory(activeCourseId, activeStudentId);
+        if (history.length > 0) {
+          setMessages(
+            history.map((m) => ({
+              id: String(m.id),
+              role: m.role,
+              content: m.content,
+            }))
+          );
+        } else {
+          setMessages([
+            {
+              id: 'welcome-1',
+              role: 'assistant',
+              content:
+                'Hello! I am your AI Tutor. I can help you with your course materials. What would you like to know today?',
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error('Failed to load chat history', error);
+        setMessages((prev) =>
+          prev.length > 0
+            ? prev
+            : [
+                {
+                  id: 'welcome-1',
+                  role: 'assistant',
+                  content:
+                    'Hello! I am your AI Tutor. I can help you with your course materials. What would you like to know today?',
+                },
+              ]
+        );
+      }
+    };
+
+    loadHistory();
+  }, [activeCourseId, activeStudentId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -271,10 +307,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-4xl mx-auto bg-gray-50 border-x border-gray-200">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-2">
+    <div className="flex flex-col h-screen bg-gray-50 sm:max-w-4xl sm:mx-auto sm:border-x sm:border-gray-200">
+      <header className="bg-white border-b border-gray-200 px-3 py-3 sm:px-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
           <div className="bg-blue-600 p-2 rounded-lg">
             <BookOpen className="w-6 h-6 text-white" />
           </div>
@@ -283,7 +319,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <p className="text-xs text-gray-500">Powered by Moodle & LangChain</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3 sm:justify-end">
             {/* 
                If we are in an integrated context (initialStudentId is set), hide the dropdowns 
                and show a static indicator or nothing. The user requested to "remove dropdown".
@@ -293,7 +329,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                 <select 
                     value={activeStudentId} 
                     onChange={(e) => setActiveStudentId(Number(e.target.value))}
-                    className="p-2 border rounded-md text-sm bg-gray-50"
+                    className="p-2 border rounded-md text-sm bg-gray-50 w-full sm:w-auto"
                 >
                     <option value={3}>Alice (Visual Learner)</option>
                     <option value={4}>Bob (Textual Learner)</option>
@@ -303,22 +339,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             )}
 
             {!initialCourseId && (
-            <select 
-                value={activeCourseId} 
-                onChange={(e) => setActiveCourseId(Number(e.target.value))}
-                className="p-2 border rounded-md text-sm"
-            >
-                {courses.length > 0 ? (
-                    courses.map(c => (
-                        <option key={c.id} value={c.id}>{c.fullname} (ID: {c.id})</option>
-                    ))
-                ) : (
-                    <>
-                        <option value={2}>Introduction to AI Tutor (Course 2)</option>
-                        <option value={101}>Intro to AI (Mock 101)</option>
-                    </>
-                )}
-            </select>
+              <select 
+                  value={activeCourseId} 
+                  onChange={(e) => setActiveCourseId(Number(e.target.value))}
+                  className="p-2 border rounded-md text-sm w-full sm:w-auto"
+              >
+                  {courses.length > 0 ? (
+                      courses.map(c => (
+                          <option key={c.id} value={c.id}>{c.fullname} (ID: {c.id})</option>
+                      ))
+                  ) : (
+                      <>
+                          <option value={2}>Introduction to AI Tutor (Course 2)</option>
+                          <option value={101}>Intro to AI (Mock 101)</option>
+                      </>
+                  )}
+              </select>
             )}
 
             {/* If integrated, maybe show a badge? Optional, but helpful. */}
@@ -333,7 +369,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleGetLearningPath}
                 disabled={isLoading}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
             >
                 <BookOpen className="w-4 h-4" />
                 My Learning Path
@@ -341,7 +377,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleGenerateQuiz}
                 disabled={isLoading}
-                className="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                className="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
             >
                 <BrainCircuit className="w-4 h-4" />
                 Pop Quiz
@@ -349,15 +385,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleIngest}
                 disabled={isLoading}
-                className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
             >
                 Refresh Content
             </button>
+          </div>
         </div>
       </header>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-3 py-4 sm:p-4 space-y-6">
         {messages.map((msg) => (
           <div 
             key={msg.id} 
@@ -416,9 +452,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="p-4 bg-white border-t border-gray-200">
-        <form onSubmit={handleSubmit} className="flex gap-2 max-w-4xl mx-auto">
+      <div className="px-3 py-3 sm:p-4 bg-white border-t border-gray-200">
+        <form onSubmit={handleSubmit} className="flex gap-2 sm:max-w-4xl sm:mx-auto">
           <input
             type="text"
             value={input}

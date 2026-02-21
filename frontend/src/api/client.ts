@@ -16,7 +16,6 @@ export interface ChatResponse {
     source: string;
     type: string;
     course_id?: number;
-    [key: string]: any;
   }>;
 }
 
@@ -32,12 +31,23 @@ export const chatApi = {
         const response = await api.post('/ai/ingest', { course_id: courseId });
         return response.data;
     },
+    getHistory: async (courseId: number, studentId: number) => {
+        const response = await api.get<Array<{ id: number; role: 'user' | 'assistant'; content: string; created_at: string }>>(
+            '/ai/chat/history',
+            { params: { course_id: courseId, student_id: studentId } }
+        );
+        return response.data;
+    },
     getKnowledgeBase: async (courseId: number) => {
         const response = await api.get(`/ai/knowledge-base/${courseId}`);
         return response.data;
     },
+    clearKnowledgeBase: async (courseId: number) => {
+        const response = await api.delete(`/ai/knowledge-base/${courseId}`);
+        return response.data;
+    },
     
-    askQuestion: async (courseId: number, question: string, studentId: number = 1) => {
+  askQuestion: async (courseId: number, question: string, studentId: number = 1) => {
     const response = await api.post<ChatResponse>('/ai/chat', { 
       course_id: courseId, 
       question,
@@ -69,8 +79,15 @@ export const chatApi = {
         status: string;
         message?: string;
         weaknesses?: string[];
+        weakness_details?: Array<{
+          topic: string;
+          average_score: number;
+          severity: 'high' | 'medium';
+          quizzes: { name: string; score: number }[];
+        }>;
         study_plan?: string;
         recommendations?: string[];
+        pinned_recommendations?: string[];
     }>('/ai/learning-path', {
       course_id: courseId,
       student_id: studentId
@@ -83,10 +100,12 @@ export interface StudentAnalytics {
     id: number;
     name: string;
     learning_style: string;
-    completed_modules_count: number;
-    quiz_average: number;
-    quizzes_taken: number;
-    last_activity: string;
+    completed_modules_count?: number;
+    quiz_average?: number;
+    quizzes_taken?: number;
+    last_activity?: string;
+    avg_score: number;
+    quiz_scores?: Record<string, number>;
 }
 
 export interface DashboardAnalytics {
@@ -99,6 +118,37 @@ export interface DashboardAnalytics {
 export const dashboardApi = {
     getAnalytics: async (courseId: number) => {
         const response = await api.get<DashboardAnalytics>(`/dashboard/analytics/${courseId}`);
+        return response.data;
+    },
+    setLearningPathOverrides: async (studentId: number, courseId: number, pinnedRecommendations: string[]) => {
+        const response = await api.post<{ pinned_recommendations: string[] }>(
+            `/dashboard/students/${studentId}/learning-path-overrides`,
+            {
+                course_id: courseId,
+                pinned_recommendations: pinnedRecommendations,
+            }
+        );
+        return response.data;
+    },
+};
+
+export interface StudentProfile {
+    id: number;
+    name: string;
+    email?: string | null;
+    learning_style: string;
+    strengths: string[];
+    weaknesses: string[];
+    interests: string[];
+}
+
+export const studentApi = {
+    getProfile: async (studentId: number) => {
+        const response = await api.get<StudentProfile>(`/dashboard/students/${studentId}/profile`);
+        return response.data;
+    },
+    updateProfile: async (studentId: number, payload: { learning_style: string; strengths: string[]; weaknesses: string[]; interests?: string[] }) => {
+        const response = await api.put<StudentProfile>(`/dashboard/students/${studentId}/profile`, payload);
         return response.data;
     }
 };

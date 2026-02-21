@@ -12,7 +12,7 @@ except ImportError:
     docx = None
     print("Warning: python-docx not installed. DOCX parsing will be disabled.")
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_community.embeddings import FastEmbedEmbeddings # Lightweight CPU embeddings
@@ -265,9 +265,13 @@ class RAGService:
             return {"status": "warning", "message": "No content found"}
 
         # 3. Split and Store
-        chunks = self.text_splitter.split_documents(documents)
-        self.vector_store.add_documents(chunks)
-        self.vector_store.persist()
+        try:
+            chunks = self.text_splitter.split_documents(documents)
+            self.vector_store.add_documents(chunks)
+            self.vector_store.persist()
+        except Exception as e:
+            print(f"Error during vector store ingestion for course {course_id}: {e}")
+            raise
         
         print(f"Ingested {len(chunks)} chunks for course {course_id}")
         return {"status": "success", "chunks_count": len(chunks)}
@@ -409,14 +413,10 @@ class RAGService:
                 "explanation": "The model failed to produce valid JSON."
             }
 
-    def generate_study_plan(self, course_id: int, weaknesses: List[str]):
-        """
-        Generates a personalized study plan based on identified weaknesses.
-        """
+    def generate_study_plan(self, course_id: int, weaknesses: List[str], weakness_details: Optional[List[Dict[str, Any]]] = None):
         if not weaknesses:
             return "Great job! You seem to be doing well in all topics. Keep reviewing the latest materials."
-            
-        # 1. Retrieve relevant materials for weaknesses
+
         context_docs = []
         for topic in weaknesses:
             docs = self.vector_store.similarity_search(
@@ -425,8 +425,7 @@ class RAGService:
                 filter={"course_id": course_id}
             )
             context_docs.extend(docs)
-            
-        # Deduplicate docs based on content
+
         seen = set()
         unique_docs = []
         for doc in context_docs:
@@ -435,22 +434,36 @@ class RAGService:
                 unique_docs.append(doc)
         
         context_text = "\n\n".join([d.page_content for d in unique_docs])
-        
-        # 2. Prompt LLM
+
+        details_text = ""
+        if weakness_details:
+            lines = []
+            for w in weakness_details:
+                topic = w.get("topic")
+                avg_score = w.get("average_score")
+                severity = w.get("severity")
+                quizzes = w.get("quizzes", [])
+                quiz_parts = [f"{q.get('name')}: {q.get('score')}%" for q in quizzes]
+                line = f"- {topic}: average {avg_score}%, severity {severity}. Quizzes: " + ", ".join(quiz_parts)
+                lines.append(line)
+            details_text = "\n".join(lines)
+
         prompt = f"""
-        You are an expert Educational Planner. 
-        The student has shown weaknesses in the following topics: {', '.join(weaknesses)}.
-        
-        Using the available course materials below, create a structured 3-step study plan to help them improve.
-        For each step, recommend specific modules or concepts to review.
-        
-        Course Material:
-        {context_text}
-        
-        Study Plan:
-        """
-        
-        # Direct LLM call
+You are an expert Educational Planner.
+The student has shown weaknesses in the following topics: {', '.join(weaknesses)}.
+
+Performance details:
+{details_text}
+
+Using the available course materials below, create a structured 3-step study plan to help them improve.
+For each step, recommend specific modules or concepts to review and concrete practice activities.
+
+Course Material:
+{context_text}
+
+Study Plan:
+"""
+
         response = self.llm.invoke(prompt)
         
         if hasattr(response, 'content'):
@@ -461,21 +474,42 @@ class RAGService:
         """
         Analyzes student performance and generates a personalized study path.
         """
-        # 1. Get Progress
         progress = student_service.get_student_progress(student_id, course_id)
         quiz_scores = progress.get('quiz_scores', {})
-        
-        # 2. Identify Weaknesses (Score < 75)
-        weaknesses = []
-        for quiz, score in quiz_scores.items():
-            if score < 75:
-                # Extract topic from quiz name
-                topic = quiz.replace(" Quiz", "").replace("Test", "").strip()
+
+        topic_scores: Dict[str, List[Tuple[str, float]]] = {}
+        for quiz_name, score in quiz_scores.items():
+            name = quiz_name
+            if name.startswith("[AI] "):
+                name = name[5:]
+            base = name.split("(")[0].strip()
+            base = base.replace("Quiz:", "").replace("Quiz", "").replace("Test", "").strip()
+            if not base:
+                base = "General"
+            if base not in topic_scores:
+                topic_scores[base] = []
+            topic_scores[base].append((quiz_name, float(score)))
+
+        weaknesses: List[str] = []
+        weakness_details: List[Dict[str, Any]] = []
+
+        for topic, entries in topic_scores.items():
+            scores_for_topic = [s for _, s in entries]
+            avg_score = sum(scores_for_topic) / len(scores_for_topic) if scores_for_topic else 0.0
+            if avg_score < 75.0:
+                severity = "high" if avg_score < 50.0 else "medium"
                 weaknesses.append(topic)
-                
+                weakness_details.append(
+                    {
+                        "topic": topic,
+                        "average_score": round(avg_score, 1),
+                        "severity": severity,
+                        "quizzes": [{"name": qn, "score": sc} for qn, sc in entries],
+                    }
+                )
+
         if not weaknesses:
             if not quiz_scores:
-                # No data yet
                 return {
                     "status": "start",
                     "message": "Welcome! Start by exploring the Course Introduction.",
@@ -488,13 +522,28 @@ class RAGService:
                     "recommendations": ["Continue to the next module."]
                 }
 
-        # 3. Generate Plan
-        plan_text = self.generate_study_plan(course_id, weaknesses)
-        
+        weakness_details_sorted = sorted(weakness_details, key=lambda w: w["average_score"])
+        top_weaknesses = weakness_details_sorted[:3]
+        top_topics = [w["topic"] for w in top_weaknesses]
+
+        plan_text = self.generate_study_plan(course_id, top_topics, weakness_details=top_weaknesses)
+
+        recommendations: List[str] = []
+        for w in top_weaknesses:
+            topic = w["topic"]
+            avg_score = w["average_score"]
+            severity = w["severity"]
+            if severity == "high":
+                recommendations.append(f"Prioritize topic '{topic}' first; current average is {avg_score}%.")
+            else:
+                recommendations.append(f"Schedule a short review for topic '{topic}' (average {avg_score}%).")
+
         return {
             "status": "needs_improvement",
-            "weaknesses": weaknesses,
-            "study_plan": plan_text
+            "weaknesses": top_topics,
+            "weakness_details": weakness_details_sorted,
+            "study_plan": plan_text,
+            "recommendations": recommendations,
         }
 
     def get_knowledge_base_summary(self, course_id: int):
@@ -542,5 +591,21 @@ class RAGService:
         except Exception as e:
             print(f"Error getting knowledge base: {e}")
             return {"error": str(e)}
+
+    def clear_knowledge_base(self, course_id: int) -> Dict[str, Any]:
+        """
+        Deletes all ingested documents for a specific course from the vector store.
+        """
+        try:
+            existing_docs = self.vector_store.get(where={"course_id": course_id})
+            if not existing_docs or not existing_docs["ids"]:
+                return {"status": "success", "deleted": 0}
+            ids = existing_docs["ids"]
+            self.vector_store.delete(ids=ids)
+            self.vector_store.persist()
+            return {"status": "success", "deleted": len(ids)}
+        except Exception as e:
+            print(f"Error clearing knowledge base: {e}")
+            return {"status": "error", "message": str(e)}
 
 rag_service = RAGService()

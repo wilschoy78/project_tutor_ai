@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from app.services.rag_service import rag_service
 from app.services.student_service import student_service
+from app.services.conversation_service import conversation_service
 
 router = APIRouter()
 
@@ -17,6 +18,13 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
+
+
+class ChatHistoryMessage(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: str
 
 class QuizRequest(BaseModel):
     course_id: int
@@ -56,17 +64,33 @@ def get_knowledge_base(course_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.delete("/knowledge-base/{course_id}", response_model=Dict[str, Any])
+def clear_knowledge_base(course_id: int):
+    """
+    Clear all ingested knowledge base documents for a course.
+    """
+    try:
+        result = rag_service.clear_knowledge_base(course_id)
+        if result.get("status") != "success":
+            raise HTTPException(status_code=500, detail=result.get("message", "Failed to clear knowledge base"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 class LearningPathRequest(BaseModel):
     course_id: int
     student_id: int
 
 @router.post("/learning-path")
 def get_learning_path(request: LearningPathRequest):
-    """
-    Get a personalized learning path based on student performance.
-    """
     try:
         result = rag_service.generate_learning_path(request.course_id, request.student_id)
+        overrides = student_service.get_learning_path_overrides(request.student_id, request.course_id)
+        if isinstance(overrides, dict):
+            pinned = overrides.get("pinned_recommendations") or []
+            result["pinned_recommendations"] = pinned
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -99,8 +123,22 @@ def chat(request: ChatRequest):
     Ask a question about a specific course.
     """
     try:
+        conversation_service.add_message(request.course_id, request.student_id, "user", request.question)
         result = rag_service.ask_question(request.course_id, request.question, request.student_id)
+        conversation_service.add_message(request.course_id, request.student_id, "assistant", result["answer"])
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chat/history", response_model=List[ChatHistoryMessage])
+def get_chat_history(course_id: int, student_id: int, limit: int = 50):
+    """
+    Get recent chat history for a course and student.
+    """
+    try:
+        history = conversation_service.get_history(course_id, student_id, limit=limit)
+        return history
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

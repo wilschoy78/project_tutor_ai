@@ -1,14 +1,17 @@
-Moodle Credentials:
+Moodle Credentials (local development):
 
-- Username: admin
-- Password: Admin123!
+- Use test accounts created in your local Moodle instance.
+- Store actual usernames and passwords outside the repository (for example, in a password manager or environment variables).
 
-- Username: alice
-- Password: Moodle123!
-- Username: bob
-- Password: Moodle123!
+API keys:
 
+- Configure GROQ_API_KEY and Moodle tokens via environment variables or a .env file.
+- Do not commit real API keys or tokens to the repository.
+
+Useful commands:
 
 trae-sandbox 'docker compose up -d --build frontend'
 trae-sandbox 'docker compose up -d --build backend'
+docker compose down
+
 docker compose up -d --build

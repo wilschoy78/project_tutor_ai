@@ -1,36 +1,31 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ChatInterface } from './components/ChatInterface'
 import { TeacherDashboard } from './components/TeacherDashboard'
 import { GraduationCap, LayoutDashboard } from 'lucide-react'
 
 function App() {
-  const [view, setView] = useState<'student' | 'teacher'>('student');
-  const [context, setContext] = useState({ courseId: 101, studentId: 1 });
-  const [roleEnforced, setRoleEnforced] = useState(false);
-
-  useEffect(() => {
+  const [view, setView] = useState<'student' | 'teacher'>(() => {
     const params = new URLSearchParams(window.location.search);
-    // Check both CamelCase and lowercase to be safe
-    const courseId = params.get('courseId') || params.get('courseid');
-    const studentId = params.get('studentId') || params.get('studentid');
     const role = params.get('role');
-    
-    if (courseId) {
-        setContext(prev => ({ ...prev, courseId: parseInt(courseId) }));
+    if (role === 'teacher') {
+      return 'teacher';
     }
-    if (studentId) {
-        setContext(prev => ({ ...prev, studentId: parseInt(studentId) }));
-    }
-    if (role) {
-        if (role === 'teacher') {
-            setView('teacher');
-            setRoleEnforced(true);
-        } else if (role === 'student') {
-            setView('student');
-            setRoleEnforced(true);
-        }
-    }
-  }, []);
+    return 'student';
+  });
+  const [context] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const courseIdParam = params.get('courseId') || params.get('courseid');
+    const studentIdParam = params.get('studentId') || params.get('studentid');
+    return {
+      courseId: courseIdParam ? parseInt(courseIdParam) : 101,
+      studentId: studentIdParam ? parseInt(studentIdParam) : 1,
+    };
+  });
+  const [roleEnforced] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get('role');
+    return role === 'teacher' || role === 'student';
+  });
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
