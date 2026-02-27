@@ -1,7 +1,18 @@
 import axios from 'axios';
 
 // Use relative path for production (reverse proxy) or env var for development
-const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
+const getBaseUrl = () => {
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+    
+    // Check if running under /lms path (production deployment)
+    if (window.location.pathname.startsWith('/lms')) {
+        return '/lms/api/v1';
+    }
+    
+    return '/api/v1';
+};
+
+const API_URL = getBaseUrl();
 
 export const api = axios.create({
   baseURL: API_URL,
