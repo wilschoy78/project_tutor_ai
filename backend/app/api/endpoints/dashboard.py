@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from app.services.student_service import student_service
+from app.services.rag_service import rag_service
 
 router = APIRouter()
 
@@ -10,6 +11,16 @@ router = APIRouter()
 def get_course_analytics(course_id: int):
     try:
         analytics = student_service.get_course_analytics(course_id)
+        return analytics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analytics/{course_id}/sync", response_model=Dict[str, Any])
+def sync_course_analytics(course_id: int):
+    try:
+        analytics = student_service.sync_course_analytics(course_id)
+        rag_service.ingest_analytics_summary(course_id, analytics)
         return analytics
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

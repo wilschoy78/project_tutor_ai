@@ -2,11 +2,19 @@ from typing import Dict, Any
 import json
 import os
 import re
+from typing import Dict, Any, List
 from app.services.moodle_client import moodle_client
 
-AI_GRADES_FILE = "ai_grades.json"
-STUDENT_PROFILES_FILE = "student_profiles.json"
-LEARNING_PATH_OVERRIDES_FILE = "learning_path_overrides.json"
+# Define data directories
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+ANALYTICS_DIR = os.path.join(DATA_DIR, "analytics")
+
+# Ensure directories exist
+os.makedirs(ANALYTICS_DIR, exist_ok=True)
+
+AI_GRADES_FILE = os.path.join(DATA_DIR, "ai_grades.json")
+STUDENT_PROFILES_FILE = os.path.join(DATA_DIR, "student_profiles.json")
+LEARNING_PATH_OVERRIDES_FILE = os.path.join(DATA_DIR, "learning_path_overrides.json")
 
 
 class StudentService:
@@ -15,55 +23,40 @@ class StudentService:
         self.student_profiles = self._load_student_profiles()
         self.learning_path_overrides = self._load_learning_path_overrides()
 
-    def _load_ai_grades(self) -> Dict[str, Any]:
-        if os.path.exists(AI_GRADES_FILE):
+    def _load_json_file(self, filepath: str) -> Dict[str, Any]:
+        if os.path.exists(filepath):
             try:
-                with open(AI_GRADES_FILE, 'r') as f:
+                with open(filepath, 'r') as f:
                     return json.load(f)
-            except:
+            except Exception as e:
+                print(f"Error loading {filepath}: {e}")
                 return {}
         return {}
+
+    def _save_json_file(self, filepath: str, data: Any):
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Error saving {filepath}: {e}")
+
+    def _load_ai_grades(self) -> Dict[str, Any]:
+        return self._load_json_file(AI_GRADES_FILE)
 
     def _save_ai_grades(self):
-        try:
-            with open(AI_GRADES_FILE, 'w') as f:
-                json.dump(self.ai_grades, f)
-        except Exception as e:
-            print(f"Error saving AI grades: {e}")
+        self._save_json_file(AI_GRADES_FILE, self.ai_grades)
     
     def _load_student_profiles(self) -> Dict[str, Any]:
-        if os.path.exists(STUDENT_PROFILES_FILE):
-            try:
-                with open(STUDENT_PROFILES_FILE, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading student profiles: {e}")
-                return {}
-        return {}
+        return self._load_json_file(STUDENT_PROFILES_FILE)
 
     def _save_student_profiles(self):
-        try:
-            with open(STUDENT_PROFILES_FILE, 'w') as f:
-                json.dump(self.student_profiles, f)
-        except Exception as e:
-            print(f"Error saving student profiles: {e}")
+        self._save_json_file(STUDENT_PROFILES_FILE, self.student_profiles)
 
     def _load_learning_path_overrides(self) -> Dict[str, Any]:
-        if os.path.exists(LEARNING_PATH_OVERRIDES_FILE):
-            try:
-                with open(LEARNING_PATH_OVERRIDES_FILE, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading learning path overrides: {e}")
-                return {}
-        return {}
+        return self._load_json_file(LEARNING_PATH_OVERRIDES_FILE)
 
     def _save_learning_path_overrides(self):
-        try:
-            with open(LEARNING_PATH_OVERRIDES_FILE, 'w') as f:
-                json.dump(self.learning_path_overrides, f)
-        except Exception as e:
-            print(f"Error saving learning path overrides: {e}")
+        self._save_json_file(LEARNING_PATH_OVERRIDES_FILE, self.learning_path_overrides)
 
     def get_learning_path_overrides(self, student_id: int, course_id: int) -> Dict[str, Any]:
         s_id = str(student_id)
@@ -220,11 +213,12 @@ class StudentService:
         self.ai_grades[s_id][c_id][quiz_name] = score
         self._save_ai_grades()
 
-    def get_course_analytics(self, course_id: int) -> Dict[str, Any]:
+    def sync_course_analytics(self, course_id: int) -> Dict[str, Any]:
         """
-        Aggregates analytics for the entire class.
+        Forces a refresh of course analytics from Moodle and caches the result.
         """
         try:
+            print(f"Syncing analytics for course {course_id}...")
             # 1. Get Enrolled Users and filter out non-students (e.g., teachers/admins)
             enrolled_users = moodle_client._call_moodle("core_enrol_get_enrolled_users", {"courseid": course_id})
 
@@ -277,13 +271,19 @@ class StudentService:
             
             class_average = sum(scores) / len(scores) if scores else 0
             
-            return {
+            analytics_data = {
                 "course_id": course_id,
                 "total_students": total_students,
                 "active_students": active_students if active_students > 0 else total_students, # Fallback if no grades yet
                 "average_score": round(class_average, 1),
                 "students": detailed_students
             }
+
+            # Save to cache
+            cache_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
+            self._save_json_file(cache_file, analytics_data)
+            
+            return analytics_data
             
         except Exception as e:
             print(f"Error fetching course analytics: {e}")
@@ -293,5 +293,17 @@ class StudentService:
                 "average_score": 0,
                 "students": []
             }
+
+    def get_course_analytics(self, course_id: int) -> Dict[str, Any]:
+        """
+        Returns cached analytics if available, otherwise syncs from Moodle.
+        """
+        cache_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
+        cached_data = self._load_json_file(cache_file)
+        
+        if cached_data:
+            return cached_data
+            
+        return self.sync_course_analytics(course_id)
 
 student_service = StudentService()

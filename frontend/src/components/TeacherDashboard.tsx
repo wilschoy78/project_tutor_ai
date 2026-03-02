@@ -50,6 +50,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [isLoading, setIsLoading] = useState(false);
     const [courses, setCourses] = useState<MoodleCourse[]>([]);
     const [isIngesting, setIsIngesting] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Modal State
     const [selectedStudent, setSelectedStudent] = useState<{ id: number; name: string } | null>(null);
@@ -131,6 +132,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         setLearningPath(null);
         setPinnedRecommendations([]);
         setNewRecommendation('');
+    };
+
+    const handleSync = async () => {
+        try {
+            setIsSyncing(true);
+            const data = await dashboardApi.syncAnalytics(courseId);
+            setAnalytics(data);
+        } catch (error: any) {
+            console.error("Failed to sync analytics:", error);
+            const detail = error.response?.data?.detail || "Unknown error";
+            alert(`Failed to sync analytics: ${detail}`);
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     const handleViewKb = async () => {
@@ -260,6 +275,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                        <button
+                            onClick={handleSync}
+                            disabled={isSyncing}
+                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto ${
+                                isSyncing 
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                            }`}
+                        >
+                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                            {isSyncing ? 'Syncing...' : 'Sync Data'}
+                        </button>
+
                         <button
                             onClick={handleViewKb}
                             className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors w-full sm:w-auto"

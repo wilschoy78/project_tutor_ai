@@ -131,6 +131,10 @@ export const dashboardApi = {
         const response = await api.get<DashboardAnalytics>(`/dashboard/analytics/${courseId}`);
         return response.data;
     },
+    syncAnalytics: async (courseId: number) => {
+        const response = await api.post<DashboardAnalytics>(`/dashboard/analytics/${courseId}/sync`);
+        return response.data;
+    },
     setLearningPathOverrides: async (studentId: number, courseId: number, pinnedRecommendations: string[]) => {
         const response = await api.post<{ pinned_recommendations: string[] }>(
             `/dashboard/students/${studentId}/learning-path-overrides`,

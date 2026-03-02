@@ -546,6 +546,47 @@ Study Plan:
             "recommendations": recommendations,
         }
 
+    def ingest_analytics_summary(self, course_id: int, analytics: Dict[str, Any]):
+        """
+        Ingests a summary of course analytics into the vector store.
+        """
+        try:
+            # Construct a text summary
+            summary = f"Course Analytics Summary for Course {course_id}:\n"
+            summary += f"Total Students: {analytics.get('total_students', 0)}\n"
+            summary += f"Active Students: {analytics.get('active_students', 0)}\n"
+            summary += f"Average Score: {analytics.get('average_score', 0)}\n"
+            
+            students = analytics.get('students', [])
+            if students:
+                summary += "Student Performance:\n"
+                for s in students:
+                    summary += f"- {s.get('name')} (ID: {s.get('id')}): Average Score {s.get('avg_score')}%\n"
+                    summary += f"  Learning Style: {s.get('learning_style')}\n"
+                    if s.get('strengths'):
+                        summary += f"  Strengths: {', '.join(s.get('strengths'))}\n"
+                    if s.get('weaknesses'):
+                        summary += f"  Weaknesses: {', '.join(s.get('weaknesses'))}\n"
+            
+            doc = Document(
+                page_content=summary,
+                metadata={
+                    "course_id": course_id,
+                    "source": "Course Analytics Report",
+                    "type": "analytics",
+                    "module": "Analytics",
+                    "section": "Dashboard"
+                }
+            )
+            
+            self.vector_store.add_documents([doc])
+            self.vector_store.persist()
+            print(f"Ingested analytics summary for course {course_id}")
+            return {"status": "success"}
+        except Exception as e:
+            print(f"Error ingesting analytics summary: {e}")
+            return {"status": "error", "message": str(e)}
+
     def get_knowledge_base_summary(self, course_id: int):
         """
         Returns a summary of all ingested documents for a course.
