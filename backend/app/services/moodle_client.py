@@ -10,7 +10,7 @@ class MoodleClient:
         print(f"MoodleClient initialized with URL: {self.url}")
         print(f"MoodleClient initialized with Token: {self.token}")
 
-    def _call_moodle(self, function_name: str, params: Dict[str, Any] = None) -> Any:
+    def _call_moodle(self, function_name: str, params: Dict[str, Any] = None, method: str = "POST") -> Any:
         """
         Generic method to call Moodle Web Service API.
         """
@@ -29,11 +29,15 @@ class MoodleClient:
                 "User-Agent": "TeacherTutorAI/1.0",
                 "Accept": "application/json"
             }
-            response = requests.post(self.rest_endpoint, data=payload, headers=headers)
+            if method.upper() == "GET":
+                response = requests.get(self.rest_endpoint, params=payload, headers=headers)
+            else:
+                response = requests.post(self.rest_endpoint, data=payload, headers=headers)
+                
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            print(f"Error calling Moodle API: {e}")
+            print(f"Error calling Moodle API ({method}): {e}")
             raise
 
     def get_site_info(self) -> Dict[str, Any]:
@@ -163,7 +167,8 @@ class MoodleClient:
         # If it fails, we will catch it and log a warning but not crash the app.
         try:
             print(f"Calling Moodle API 'core_grades_update_grades' with payload: {payload}")
-            response = self._call_moodle("core_grades_update_grades", payload)
+            # Try GET request to avoid 405 Method Not Allowed
+            response = self._call_moodle("core_grades_update_grades", payload, method="GET")
             print(f"Moodle API Response: {response}")
             return response
         except Exception as e:
