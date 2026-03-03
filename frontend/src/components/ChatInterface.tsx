@@ -360,12 +360,40 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
       const response = await chatApi.askQuestion(activeCourseId, userMessage.content, activeStudentId);
       console.log('API Response:', response);
       
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.answer,
-        sources: response.sources
-      };
+      let botMessage: Message;
+      
+      // Check for embedded quiz JSON
+      if (response.answer.includes(":::JSON_QUIZ:::")) {
+          const [text, jsonPart] = response.answer.split(":::JSON_QUIZ:::");
+          try {
+              const quizData = JSON.parse(jsonPart);
+              botMessage = {
+                  id: (Date.now() + 1).toString(),
+                  role: 'assistant',
+                  content: text,
+                  quiz: quizData,
+                  context: {
+                      courseId: activeCourseId,
+                      studentId: activeStudentId
+                  }
+              };
+          } catch (e) {
+              // Fallback if JSON parse fails
+              botMessage = {
+                  id: (Date.now() + 1).toString(),
+                  role: 'assistant',
+                  content: response.answer.replace(":::JSON_QUIZ:::", ""),
+                  sources: response.sources
+              };
+          }
+      } else {
+          botMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: response.answer,
+            sources: response.sources
+          };
+      }
 
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {

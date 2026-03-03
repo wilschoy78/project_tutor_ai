@@ -159,6 +159,49 @@ def chat(request: ChatRequest):
     """
     try:
         conversation_service.add_message(request.course_id, request.student_id, "user", request.question)
+        
+        # Check if the user is asking for a quiz via chat text
+        lower_q = request.question.lower()
+        if "quiz" in lower_q and ("give" in lower_q or "create" in lower_q or "generate" in lower_q or "make" in lower_q):
+            # Extract topic (simple heuristic)
+            topic = "General Review"
+            if "on" in lower_q:
+                topic = request.question.split("on", 1)[1].strip()
+            elif "about" in lower_q:
+                topic = request.question.split("about", 1)[1].strip()
+            
+            # Generate quiz using the existing service
+            quiz_data = quiz_service.get_student_quiz(request.course_id, topic)
+            
+            # Create a structured response that the frontend can detect
+            # We return the quiz JSON as the answer, but wrapped in a specific way or just the JSON string?
+            # The frontend checks if the message contains a 'quiz' property usually, but for /chat endpoint it returns ChatResponse { answer, sources }
+            # So we need to encode it in the answer in a way the frontend can parse, OR rely on the frontend parsing "I've generated a quiz..."
+            
+            # Let's return a special marker that the frontend can detect to render the card
+            import json
+            quiz_json = json.dumps(quiz_data)
+            
+            # We save the interaction to history with the quiz marker
+            # The frontend's history loader might already handle this if we save it correctly
+            # But here we are returning a ChatResponse immediately.
+            
+            # Ideally, we should unify /chat and /quiz or make /chat capable of returning structured data.
+            # For now, let's embed it in the answer with a hidden marker or just return the text and let the frontend handle it?
+            # No, the user wants the interactive card.
+            
+            # Hack: Return the JSON string as the answer. The frontend needs to check if answer is valid JSON quiz.
+            # Or better: "I've generated a quiz for you: <QUIZ_JSON>..."
+            
+            response_text = f"I've generated a quiz for you on {topic}:::JSON_QUIZ:::{quiz_json}"
+            
+            conversation_service.add_message(request.course_id, request.student_id, "assistant", response_text)
+            
+            return {
+                "answer": response_text,
+                "sources": []
+            }
+
         result = rag_service.ask_question(request.course_id, request.question, request.student_id)
         conversation_service.add_message(request.course_id, request.student_id, "assistant", result["answer"])
         return result
