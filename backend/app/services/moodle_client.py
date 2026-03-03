@@ -162,9 +162,14 @@ class MoodleClient:
         # NOTE: This call is speculative because Moodle's API for manual items is obscure.
         # If it fails, we will catch it and log a warning but not crash the app.
         try:
-            return self._call_moodle("core_grades_update_grades", payload)
+            print(f"Calling Moodle API 'core_grades_update_grades' with payload: {payload}")
+            response = self._call_moodle("core_grades_update_grades", payload)
+            print(f"Moodle API Response: {response}")
+            return response
         except Exception as e:
             print(f"Grade passback failed (expected if manual item API not enabled): {e}")
+            if hasattr(e, 'response') and e.response:
+                print(f"Moodle Error Details: {e.response.text}")
             return {"status": "failed", "message": str(e)}
 
     def download_file(self, file_url: str) -> Optional[bytes]:
