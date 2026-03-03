@@ -2,6 +2,7 @@ from typing import Dict, Any
 import json
 import os
 import re
+import time
 from typing import Dict, Any, List
 from app.services.moodle_client import moodle_client
 
@@ -248,8 +249,12 @@ class StudentService:
                 ai_scores = list(self.ai_grades[s_id][c_id].values())
                 if ai_scores:
                     average_ai_grade = sum(ai_scores) / len(ai_scores)
-                    print(f"Pushing grade {average_ai_grade} to Moodle Item 25 for User {student_id}")
-                    moodle_client.update_grade_item(course_id, student_id, 25, average_ai_grade)
+                    print(f"Pushing grade {average_ai_grade} to Moodle assignment 'AI Tutor Progress' for User {student_id}")
+                    result = moodle_client.push_ai_tutor_progress(course_id, student_id, average_ai_grade, assignment_name="AI Tutor Progress")
+                    if isinstance(result, dict) and result.get("exception"):
+                        print(f"Grade passback failed (API exception): {result}")
+                    elif isinstance(result, dict) and result.get("status") == "failed":
+                        print(f"Grade passback failed: {result.get('message')}")
             except Exception as e:
                 print(f"Failed to push grade to Moodle: {e}")
 
@@ -331,17 +336,18 @@ class StudentService:
                 # Force sync individual progress as well
                 progress = self.sync_student_progress(uid, course_id)
 
-                student_scores = list(progress.get("quiz_scores", {}).values())
+                quiz_scores_dict = progress.get("quiz_scores", {}) or {}
+                student_scores = list(quiz_scores_dict.values())
                 avg_score = sum(student_scores) / len(student_scores) if student_scores else 0
 
-                if avg_score > 0:
+                if len(quiz_scores_dict) > 0:
                     active_students += 1
                     scores.append(avg_score)
                 
                 # Dynamically calculate weaknesses based on quiz scores
                 # Group quizzes by topic (assuming format "Quiz: Topic Name" or similar)
                 topic_map = {}
-                for q_name, q_score in progress.get("quiz_scores", {}).items():
+                for q_name, q_score in quiz_scores_dict.items():
                     name = q_name
                     if name.startswith("[AI] "):
                         name = name[5:]
@@ -377,11 +383,65 @@ class StudentService:
                 # Combine with profile weaknesses if any, ensuring uniqueness
                 final_weaknesses = list(set(profile.get("weaknesses", []) + calculated_weaknesses))
 
+                ai_quiz_entries: List[Dict[str, Any]] = []
+                for q_name, q_score in quiz_scores_dict.items():
+                    if not str(q_name).startswith("[AI] "):
+                        continue
+                    m_ts = re.search(r"\((\d{9,})\)", str(q_name))
+                    ts = int(m_ts.group(1)) if m_ts else 0
+                    try:
+                        sc = float(q_score)
+                    except Exception:
+                        sc = 0.0
+                    ai_quiz_entries.append({"ts": ts, "score": sc})
+
+                ai_quiz_entries.sort(key=lambda x: x["ts"])
+                ai_quizzes_taken = len(ai_quiz_entries)
+                last_ai_quiz_ts = ai_quiz_entries[-1]["ts"] if ai_quiz_entries else None
+                last_ai_quiz_score = ai_quiz_entries[-1]["score"] if ai_quiz_entries else None
+
+                risk_reasons: List[str] = []
+                if len(quiz_scores_dict) == 0:
+                    risk_level = "no_data"
+                    risk_reasons.append("No quiz attempts recorded yet.")
+                else:
+                    if avg_score < 50.0:
+                        risk_level = "at_risk"
+                        risk_reasons.append("Low average score (< 50%).")
+                    elif avg_score < 75.0:
+                        risk_level = "needs_support"
+                        risk_reasons.append("Below mastery threshold (< 75%).")
+                    else:
+                        risk_level = "on_track"
+
+                    if ai_quizzes_taken >= 3:
+                        last3 = [x["score"] for x in ai_quiz_entries[-3:]]
+                        if last3[0] > last3[1] > last3[2]:
+                            risk_reasons.append("Declining performance trend in recent AI quizzes.")
+                            if risk_level != "at_risk":
+                                risk_level = "at_risk"
+
+                    if last_ai_quiz_ts:
+                        days_since = (time.time() - last_ai_quiz_ts) / 86400.0
+                        if days_since > 7.0:
+                            risk_reasons.append("No AI quiz activity in the last 7 days.")
+                            if risk_level == "on_track":
+                                risk_level = "needs_support"
+
+                    if calculated_weaknesses:
+                        risk_reasons.append(f"Struggling topics detected: {', '.join(calculated_weaknesses[:3])}.")
+
                 detailed_students.append({
                     "id": uid,
                     "name": fullname,
                     "avg_score": round(avg_score, 1),
-                    "quiz_scores": progress.get("quiz_scores", {}),
+                    "quiz_scores": quiz_scores_dict,
+                    "quizzes_taken": len(quiz_scores_dict),
+                    "ai_quizzes_taken": ai_quizzes_taken,
+                    "last_ai_quiz_ts": last_ai_quiz_ts,
+                    "last_ai_quiz_score": last_ai_quiz_score,
+                    "risk_level": risk_level,
+                    "risk_reasons": risk_reasons,
                     "learning_style": profile.get("learning_style", "General"),
                     "strengths": profile.get("strengths", []),
                     "weaknesses": final_weaknesses

@@ -127,6 +127,11 @@ export interface StudentAnalytics {
     last_activity?: string;
     avg_score: number;
     quiz_scores?: Record<string, number>;
+    ai_quizzes_taken?: number;
+    last_ai_quiz_ts?: number | null;
+    last_ai_quiz_score?: number | null;
+    risk_level?: 'no_data' | 'on_track' | 'needs_support' | 'at_risk';
+    risk_reasons?: string[];
 }
 
 export interface DashboardAnalytics {

@@ -8,7 +8,7 @@ class MoodleClient:
         self.token = settings.MOODLE_TOKEN
         self.rest_endpoint = f"{self.url}/webservice/rest/server.php"
         print(f"MoodleClient initialized with URL: {self.url}")
-        print(f"MoodleClient initialized with Token: {self.token}")
+        print("MoodleClient initialized with Token: [REDACTED]")
 
     def _call_moodle(self, function_name: str, params: Dict[str, Any] = None, method: str = "POST") -> Any:
         """
@@ -177,6 +177,60 @@ class MoodleClient:
                 print(f"Moodle Error Details: {e.response.text}")
             return {"status": "failed", "message": str(e)}
 
+    def _get_assignments(self, course_id: int) -> List[Dict[str, Any]]:
+        response = self._call_moodle(
+            "mod_assign_get_assignments",
+            {
+                "courseids[0]": course_id,
+            },
+            method="GET",
+        )
+        courses = response.get("courses") if isinstance(response, dict) else None
+        if not courses:
+            return []
+        assignments: List[Dict[str, Any]] = []
+        for c in courses:
+            if isinstance(c, dict) and int(c.get("id", -1)) == int(course_id):
+                assignments = c.get("assignments") or []
+                break
+        return assignments if isinstance(assignments, list) else []
+
+    def _find_assignment_id_by_name(self, course_id: int, assignment_name: str) -> Optional[int]:
+        assignments = self._get_assignments(course_id)
+        target = assignment_name.strip().lower()
+        for a in assignments:
+            if not isinstance(a, dict):
+                continue
+            name = str(a.get("name", "")).strip().lower()
+            if name == target:
+                try:
+                    return int(a.get("id"))
+                except Exception:
+                    return None
+        return None
+
+    def save_assignment_grade(self, assignment_id: int, user_id: int, grade: float) -> Any:
+        payload = {
+            "assignmentid": assignment_id,
+            "userid": user_id,
+            "grade": float(grade),
+            "attemptnumber": -1,
+            "addattempt": 0,
+        }
+        print(f"Calling Moodle API 'mod_assign_save_grade' with payload: {payload}")
+        response = self._call_moodle("mod_assign_save_grade", payload, method="GET")
+        print(f"Moodle API Response: {response}")
+        return response
+
+    def push_ai_tutor_progress(self, course_id: int, user_id: int, grade: float, assignment_name: str = "AI Tutor Progress") -> Any:
+        assignment_id = self._find_assignment_id_by_name(course_id, assignment_name)
+        if assignment_id is None:
+            return {
+                "status": "failed",
+                "message": f"Assignment not found: {assignment_name}",
+            }
+        return self.save_assignment_grade(assignment_id, user_id, grade)
+
     def download_file(self, file_url: str) -> Optional[bytes]:
         """
         Download a file from Moodle using the token.
@@ -203,8 +257,8 @@ class MockMoodleClient(MoodleClient):
     """
     Mock client for development/testing when Moodle is unreachable.
     """
-    def _call_moodle(self, function_name: str, params: Dict[str, Any] = None) -> Any:
-        print(f"[MOCK] Calling Moodle: {function_name} with {params}")
+    def _call_moodle(self, function_name: str, params: Dict[str, Any] = None, method: str = "POST") -> Any:
+        print(f"[MOCK] Calling Moodle ({method}): {function_name} with {params}")
         if function_name == "core_webservice_get_site_info":
             return {
                 "sitename": "Mock Moodle Site",

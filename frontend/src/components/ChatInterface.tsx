@@ -377,7 +377,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                       studentId: activeStudentId
                   }
               };
-          } catch (e) {
+          } catch {
               // Fallback if JSON parse fails
               botMessage = {
                   id: (Date.now() + 1).toString(),

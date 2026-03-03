@@ -139,7 +139,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         try {
             await teacherApi.approveQuiz(courseId, quizId);
             setPendingQuizzes(prev => prev.filter(q => q.id !== quizId));
-        } catch (error) {
+        } catch {
             alert("Failed to approve quiz");
         }
     };
@@ -148,7 +148,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         try {
             await teacherApi.rejectQuiz(courseId, quizId);
             setPendingQuizzes(prev => prev.filter(q => q.id !== quizId));
-        } catch (error) {
+        } catch {
             alert("Failed to reject quiz");
         }
     };
@@ -161,7 +161,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             await teacherApi.generateQuizCandidates(courseId, generateTopic, 3);
             await loadPendingQuizzes();
             setGenerateTopic('');
-        } catch (error) {
+        } catch {
             alert("Failed to generate quizzes");
         } finally {
             setIsLoadingQuizzes(false);
@@ -571,7 +571,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     <div>
                                         <p className="text-sm text-gray-500">At Risk</p>
                                         <p className="text-xl font-bold text-gray-900">
-                                            {analytics.students?.filter((s: StudentAnalytics) => (Number(s.avg_score) || 0) < 50).length || 0}
+                                            {analytics.students?.filter((s: StudentAnalytics) => {
+                                                if (s.risk_level) return s.risk_level === 'at_risk';
+                                                return (Number(s.avg_score) || 0) < 50;
+                                            }).length || 0}
                                         </p>
                                     </div>
                                 </div>
@@ -688,19 +691,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                 <td className="px-6 py-3 text-sm">
                                                     {(() => {
                                                         const score = Number(student.avg_score) || 0;
+                                                        const risk = student.risk_level;
+                                                        const reasons = (student.risk_reasons || []).join(' ');
+
                                                         let label = "At Risk";
                                                         let classes = "bg-red-50 text-red-700 border-red-200";
 
-                                                        if (score >= 80) {
+                                                        if (risk === 'no_data') {
+                                                            label = "No Data";
+                                                            classes = "bg-gray-50 text-gray-700 border-gray-200";
+                                                        } else if (risk === 'on_track') {
                                                             label = "On Track";
                                                             classes = "bg-green-50 text-green-700 border-green-200";
-                                                        } else if (score >= 50) {
+                                                        } else if (risk === 'needs_support') {
                                                             label = "Needs Support";
                                                             classes = "bg-yellow-50 text-yellow-700 border-yellow-200";
+                                                        } else if (risk === 'at_risk') {
+                                                            label = "At Risk";
+                                                            classes = "bg-red-50 text-red-700 border-red-200";
+                                                        } else {
+                                                            if (score >= 80) {
+                                                                label = "On Track";
+                                                                classes = "bg-green-50 text-green-700 border-green-200";
+                                                            } else if (score >= 50) {
+                                                                label = "Needs Support";
+                                                                classes = "bg-yellow-50 text-yellow-700 border-yellow-200";
+                                                            }
                                                         }
 
                                                         return (
-                                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${classes}`}>
+                                                            <span
+                                                                className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${classes}`}
+                                                                title={reasons || undefined}
+                                                            >
                                                                 {label}
                                                             </span>
                                                         );
