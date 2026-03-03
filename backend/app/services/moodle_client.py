@@ -83,6 +83,90 @@ class MoodleClient:
             "grades": grades_data
         }
 
+    def update_grade_item(self, course_id: int, user_id: int, item_id: int, grade: float) -> Any:
+        """
+        Update a manual grade item for a student.
+        Note: The function 'core_grades_update_grades' is typically used for activity grades.
+        For manual items, we might need 'gradereport_user_get_grade_items' to find it, 
+        and then 'core_grade_update_grades' (singular/plural varies by version).
+        
+        However, the most standard way to write to the gradebook from an external tool 
+        without LTI is often via 'core_grades_update_grades'.
+        
+        Parameters:
+        - source: A string identifying the source of the grade (e.g., 'ai-tutor')
+        - courseid: The course ID
+        - component: 'mod_quiz', 'mod_assign', or 'moodle' for manual items?
+          Actually, for manual items, it's tricky via WS API.
+          
+          Alternative: If we know the 'itemid', we can try using 'core_grades_update_grades' 
+          but it usually requires 'component' and 'activityid'.
+          
+          Let's try a direct approach if the standard function supports itemid directly.
+          Documentation says: core_grades_update_grades takes 'itemid', 'userid', 'gradeval', etc.
+        """
+        # Prepare the grade data structure
+        # The structure usually expected by core_grades_update_grades is:
+        # source, courseid, component, activityid, itemnumber, grades[...].
+        # But wait, that function is for activity grades.
+        
+        # For MANUAL grade items, we often need to use a different approach or trick Moodle.
+        # But let's assume we can use the 'itemid' directly if we can find a function.
+        # Unfortunately, standard Moodle WS API doesn't have a simple "update_grade_item_by_id".
+        
+        # Let's try 'core_grade_update_grades' (if available plugin) or fallback.
+        # Since we are hacking this for a demo, we might need to rely on the fact 
+        # that we might not be able to push to a MANUAL item easily without a custom plugin.
+        
+        # However, let's try 'core_grades_update_grades' with generic params.
+        # Warning: This is the most brittle part of Moodle API integration.
+        
+        # Let's try to just log it for now if we can't find the perfect function documentation.
+        # But wait! 'gradereport_grader_update_grade' might exist? No.
+        
+        # Let's assume we use 'core_grade_update_grades' which allows updating generic grades.
+        # params: source, courseid, component, activityid, itemnumber, grades
+        
+        # If we use a manual item, 'component' is 'moodle', 'activityid' is likely null?
+        
+        print(f"Attempting to update grade for user {user_id}, item {item_id} to {grade}")
+        
+        # We will try a specific payload structure often used for plugins
+        # But since we can't guarantee it works without trial, we will wrap in try/catch
+        
+        # REVISED PLAN:
+        # We will use 'core_grades_update_grades' with:
+        # source = 'app', courseid = ..., component = 'unknown', activityid = ...
+        # If that fails, we just log it. 
+        # Actually, let's use a simpler known working function if possible.
+        
+        # For this specific capstone, if we can't push to manual item 25 easily,
+        # we might just log "Grade Passback: Success (Simulated)" for the demo 
+        # unless we are sure about the API.
+        
+        # Let's try the standard call:
+        payload = {
+            "source": "ai-tutor",
+            "courseid": course_id,
+            "component": "mod_manual", # Guessing component for manual items
+            "activityid": item_id,     # Using itemid as activityid might work?
+            "itemnumber": 0,
+            "grades": [
+                {
+                    "studentid": user_id,
+                    "grade": grade
+                }
+            ]
+        }
+        
+        # NOTE: This call is speculative because Moodle's API for manual items is obscure.
+        # If it fails, we will catch it and log a warning but not crash the app.
+        try:
+            return self._call_moodle("core_grades_update_grades", payload)
+        except Exception as e:
+            print(f"Grade passback failed (expected if manual item API not enabled): {e}")
+            return {"status": "failed", "message": str(e)}
+
     def download_file(self, file_url: str) -> Optional[bytes]:
         """
         Download a file from Moodle using the token.

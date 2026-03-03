@@ -234,6 +234,25 @@ class StudentService:
         self.ai_grades[s_id][c_id][quiz_name] = score
         self._save_ai_grades()
 
+        # Grade Passback to Moodle
+        # Hardcoded Item ID for Demo (Course 3 -> Item 25)
+        # In a real app, we would store this mapping in a DB
+        if int(course_id) == 3:
+            try:
+                # We calculate the new aggregate grade.
+                # Since Moodle's "AI Tutor Progress" item is a single value (0-100),
+                # we should probably send the *average* of all AI quizzes, or just the latest score?
+                # Usually, it's better to send an accumulated score. 
+                # Let's send the AVERAGE of all AI quizzes taken so far.
+                
+                ai_scores = list(self.ai_grades[s_id][c_id].values())
+                if ai_scores:
+                    average_ai_grade = sum(ai_scores) / len(ai_scores)
+                    print(f"Pushing grade {average_ai_grade} to Moodle Item 25 for User {student_id}")
+                    moodle_client.update_grade_item(course_id, student_id, 25, average_ai_grade)
+            except Exception as e:
+                print(f"Failed to push grade to Moodle: {e}")
+
         # Update the student's progress cache immediately
         cache_file = os.path.join(PROGRESS_DIR, f"progress_{student_id}_{course_id}.json")
         cached_data = self._load_json_file(cache_file)
