@@ -18,10 +18,12 @@ interface Message {
 const QuizCard = ({ quiz, context }: { quiz: QuizResponse, context?: { courseId: number, studentId: number } }) => {
     const [selected, setSelected] = useState<string | null>(null);
     const [showFeedback, setShowFeedback] = useState(false);
+    const [showHint, setShowHint] = useState(false);
     
     const handleSelect = (option: string) => {
         setSelected(option);
         setShowFeedback(true);
+        setShowHint(false); // Hide hint if answer is selected
         
         if (context) {
             const isCorrect = option === quiz.correct_answer;
@@ -63,6 +65,24 @@ const QuizCard = ({ quiz, context }: { quiz: QuizResponse, context?: { courseId:
                     );
                 })}
             </div>
+
+            {!showFeedback && quiz.hint && (
+                <div className="mt-3">
+                    <button 
+                        onClick={() => setShowHint(!showHint)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                    >
+                        <BrainCircuit className="w-3 h-3" />
+                        {showHint ? "Hide Hint" : "Need a Hint?"}
+                    </button>
+                    {showHint && (
+                        <div className="mt-2 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100 italic">
+                            💡 {quiz.hint}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {showFeedback && (
                 <div className={cn(
                     "mt-4 p-4 rounded-lg text-sm border",

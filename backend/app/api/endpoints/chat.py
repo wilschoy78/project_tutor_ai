@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.services.rag_service import rag_service
 from app.services.student_service import student_service
 from app.services.conversation_service import conversation_service
@@ -35,6 +35,7 @@ class QuizResponse(BaseModel):
     options: List[str]
     correct_answer: str
     explanation: str
+    hint: Optional[str] = None
 
 class QuizSubmission(BaseModel):
     course_id: int

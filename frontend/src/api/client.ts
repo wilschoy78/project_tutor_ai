@@ -35,6 +35,7 @@ export interface QuizResponse {
   options: string[];
   correct_answer: string;
   explanation: string;
+  hint?: string;
 }
 
 export const chatApi = {

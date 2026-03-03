@@ -374,7 +374,8 @@ class RAGService:
             "question": "The question text",
             "options": ["Option A", "Option B", "Option C", "Option D"],
             "correct_answer": "The correct option text (must be one of the options)",
-            "explanation": "Brief explanation of why it is correct"
+            "explanation": "Detailed explanation of why it is correct, referencing specific course concepts.",
+            "hint": "A subtle clue that points to the relevant concept without giving away the answer."
         }}
         
         Ensure the JSON is valid and has no markdown formatting (like ```json). Just the raw JSON string.
@@ -449,19 +450,20 @@ class RAGService:
             details_text = "\n".join(lines)
 
         prompt = f"""
-You are an expert Educational Planner.
+You are an expert AI Tutor and Educational Planner. You are speaking directly to the student.
 The student has shown weaknesses in the following topics: {', '.join(weaknesses)}.
 
 Performance details:
 {details_text}
 
-Using the available course materials below, create a structured 3-step study plan to help them improve.
-For each step, recommend specific modules or concepts to review and concrete practice activities.
+Using the available course materials below, create a structured 3-step study plan to help the student improve.
+Address the student directly as "you". Be encouraging but specific.
+For each step, recommend specific modules or concepts from the course material to review.
 
 Course Material:
 {context_text}
 
-Study Plan:
+Your Personalized Study Plan:
 """
 
         response = self.llm.invoke(prompt)
