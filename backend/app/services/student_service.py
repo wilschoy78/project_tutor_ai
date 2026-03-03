@@ -318,6 +318,32 @@ class StudentService:
                 if avg_score > 0:
                     active_students += 1
                     scores.append(avg_score)
+                
+                # Dynamically calculate weaknesses based on quiz scores
+                # Group quizzes by topic (assuming format "Quiz: Topic Name" or similar)
+                topic_map = {}
+                for q_name, q_score in progress.get("quiz_scores", {}).items():
+                    name = q_name
+                    if name.startswith("[AI] "):
+                        name = name[5:]
+                    # Simple heuristic: remove "Quiz:" and parens
+                    base = name.split("(")[0].strip()
+                    base = base.replace("Quiz:", "").replace("Quiz", "").replace("Test", "").strip()
+                    if not base:
+                        base = "General"
+                    
+                    if base not in topic_map:
+                        topic_map[base] = []
+                    topic_map[base].append(float(q_score))
+                
+                calculated_weaknesses = []
+                for topic, t_scores in topic_map.items():
+                    t_avg = sum(t_scores) / len(t_scores)
+                    if t_avg < 75.0: # Threshold for weakness
+                        calculated_weaknesses.append(topic)
+                
+                # Combine with profile weaknesses if any, ensuring uniqueness
+                final_weaknesses = list(set(profile.get("weaknesses", []) + calculated_weaknesses))
 
                 detailed_students.append({
                     "id": uid,
@@ -326,7 +352,7 @@ class StudentService:
                     "quiz_scores": progress.get("quiz_scores", {}),
                     "learning_style": profile.get("learning_style", "General"),
                     "strengths": profile.get("strengths", []),
-                    "weaknesses": profile.get("weaknesses", [])
+                    "weaknesses": final_weaknesses
                 })
             
             class_average = sum(scores) / len(scores) if scores else 0
