@@ -331,11 +331,21 @@ class StudentService:
             
             class_average = sum(scores) / len(scores) if scores else 0
             
+            # Aggregate weaknesses across all students
+            all_weaknesses = []
+            for s in detailed_students:
+                all_weaknesses.extend(s.get("weaknesses", []))
+            
+            from collections import Counter
+            weakness_counts = Counter(all_weaknesses).most_common(5)
+            top_weaknesses = [{"topic": topic, "count": count} for topic, count in weakness_counts]
+
             analytics_data = {
                 "course_id": course_id,
                 "total_students": total_students,
-                "active_students": active_students if active_students > 0 else total_students, # Fallback if no grades yet
+                "active_students": active_students if active_students > 0 else total_students, # Fallback if no grades yet,
                 "average_score": round(class_average, 1),
+                "top_weaknesses": top_weaknesses,
                 "students": detailed_students
             }
 

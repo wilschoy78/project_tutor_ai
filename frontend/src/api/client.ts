@@ -133,6 +133,8 @@ export interface DashboardAnalytics {
     course_id: number;
     total_students: number;
     average_score: number;
+    active_students?: number;
+    top_weaknesses?: { topic: string; count: number }[];
     students: StudentAnalytics[];
 }
 

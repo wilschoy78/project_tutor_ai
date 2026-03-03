@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw } from 'lucide-react';
+import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle } from 'lucide-react';
 import {
     dashboardApi,
     chatApi,
@@ -350,44 +350,75 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                     <div className="text-center py-20 text-gray-500">Loading analytics...</div>
                 ) : analytics ? (
                     <div className="space-y-6">
-                        {/* Stats Overview */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-blue-100 rounded-lg">
-                                        <Users className="w-6 h-6 text-blue-600" />
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-blue-50 rounded-lg">
+                                        <Users className="w-5 h-5 text-blue-600" />
                                     </div>
                                     <div>
                                         <p className="text-sm text-gray-500">Total Students</p>
-                                        <p className="text-2xl font-bold text-gray-900">{analytics.total_students}</p>
+                                        <p className="text-xl font-bold text-gray-900">{analytics.total_students}</p>
                                     </div>
                                 </div>
                             </div>
-                            
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-green-100 rounded-lg">
-                                        <Activity className="w-6 h-6 text-green-600" />
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-50 rounded-lg">
+                                        <Activity className="w-5 h-5 text-green-600" />
                                     </div>
                                     <div>
-                                        <p className="text-sm text-gray-500">Class Average Score</p>
-                                        <p className="text-2xl font-bold text-gray-900">{analytics.average_score}%</p>
+                                        <p className="text-sm text-gray-500">Active Students</p>
+                                        <p className="text-xl font-bold text-gray-900">{analytics.active_students ?? analytics.students.filter(s => s.avg_score > 0).length}</p>
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-purple-100 rounded-lg">
-                                        <BookOpen className="w-6 h-6 text-purple-600" />
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-purple-50 rounded-lg">
+                                        <BrainCircuit className="w-5 h-5 text-purple-600" />
                                     </div>
                                     <div>
-                                        <p className="text-sm text-gray-500">Active Course</p>
-                                        <p className="text-lg font-bold text-gray-900">ID: {analytics.course_id}</p>
+                                        <p className="text-sm text-gray-500">Class Average</p>
+                                        <p className="text-xl font-bold text-gray-900">{analytics.average_score}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-orange-50 rounded-lg">
+                                        <AlertTriangle className="w-5 h-5 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-500">At Risk</p>
+                                        <p className="text-xl font-bold text-gray-900">
+                                            {analytics.students?.filter((s: StudentAnalytics) => (Number(s.avg_score) || 0) < 50).length || 0}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Top Weaknesses */}
+                        {analytics.top_weaknesses && analytics.top_weaknesses.length > 0 && (
+                            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-orange-500" />
+                                    Common Struggle Areas
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {analytics.top_weaknesses.map((w, idx) => (
+                                        <div key={idx} className="bg-orange-50 border border-orange-100 p-3 rounded-lg flex justify-between items-center">
+                                            <span className="font-medium text-orange-800 text-sm truncate" title={w.topic}>{w.topic}</span>
+                                            <span className="bg-white px-2 py-0.5 rounded text-xs font-bold text-orange-600 border border-orange-100">
+                                                {w.count} students
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Student List */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
