@@ -68,10 +68,11 @@ export const chatApi = {
     return response.data;
   },
 
-  generateQuiz: async (courseId: number, topic: string) => {
+  generateQuiz: async (courseId: number, topic: string, studentId: number) => {
     const response = await api.post<QuizResponse>('/ai/quiz', { 
       course_id: courseId, 
-      topic 
+      topic,
+      student_id: studentId
     });
     return response.data;
   },

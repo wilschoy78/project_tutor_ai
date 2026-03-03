@@ -28,6 +28,7 @@ class ChatHistoryMessage(BaseModel):
 
 class QuizRequest(BaseModel):
     course_id: int
+    student_id: int = 1
     topic: str
 
 class QuizResponse(BaseModel):
@@ -164,7 +165,15 @@ def generate_quiz(request: QuizRequest):
     Generate a quiz question based on a topic.
     """
     try:
+        # Generate the quiz first
         result = rag_service.generate_quiz(request.course_id, request.topic)
+        
+        # Save to history so it persists
+        # Note: We are saving a simplified text version. 
+        # Ideally we'd save the full JSON in a 'metadata' column, but for now this confirms interaction.
+        conversation_service.add_message(request.course_id, request.student_id, "user", f"Give me a pop quiz on {request.topic}")
+        conversation_service.add_message(request.course_id, request.student_id, "assistant", f"I've generated a quiz for you: {result['question']}")
+        
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -210,7 +210,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         content: "Generating a quick quiz for you..."
       }]);
       
-      const quiz = await chatApi.generateQuiz(activeCourseId, topic);
+      const quiz = await chatApi.generateQuiz(activeCourseId, topic, activeStudentId);
       
       setMessages(prev => {
         // Replace the "Generating..." message or append new one
