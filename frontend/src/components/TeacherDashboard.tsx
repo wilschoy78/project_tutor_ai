@@ -436,13 +436,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                         />
                                                     </div>
                                                     {student.quiz_scores && Object.keys(student.quiz_scores).length > 0 && (
-                                                        <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                                                            {Object.entries(student.quiz_scores).map(([quiz, score]) => (
-                                                                <div key={quiz}>
-                                                                    <span className="font-medium text-gray-600">{quiz}:</span>{' '}
-                                                                    <span>{String(score)}%</span>
-                                                                </div>
-                                                            ))}
+                                                        <div className="text-xs text-gray-500 mt-1 space-y-0.5 max-h-32 overflow-y-auto scrollbar-thin">
+                                                            {/* Separate Moodle and AI scores */}
+                                                            {(() => {
+                                                                const scores = Object.entries(student.quiz_scores);
+                                                                const moodleScores = scores.filter(([k]) => !k.startsWith('[AI]'));
+                                                                const aiScores = scores.filter(([k]) => k.startsWith('[AI]'));
+                                                                
+                                                                // Calculate average for AI quizzes if many
+                                                                const aiAvg = aiScores.length > 0 
+                                                                    ? aiScores.reduce((acc, [, val]) => acc + Number(val), 0) / aiScores.length 
+                                                                    : 0;
+
+                                                                return (
+                                                                    <>
+                                                                        {moodleScores.map(([quiz, score]) => (
+                                                                            <div key={quiz} className="flex justify-between gap-2">
+                                                                                <span className="font-medium text-gray-600 truncate max-w-[150px]" title={quiz}>{quiz}:</span>
+                                                                                <span>{String(score)}%</span>
+                                                                            </div>
+                                                                        ))}
+                                                                        
+                                                                        {aiScores.length > 0 && (
+                                                                            <div className="mt-1 pt-1 border-t border-gray-100">
+                                                                                <div className="flex justify-between gap-2 text-indigo-600 font-medium">
+                                                                                    <span>AI Pop Quizzes ({aiScores.length}):</span>
+                                                                                    <span>{Math.round(aiAvg)}% Avg</span>
+                                                                                </div>
+                                                                                {/* Collapsible detail could go here, but let's keep it simple for now */}
+                                                                                <div className="text-[10px] text-gray-400 pl-2 border-l-2 border-indigo-100 mt-0.5">
+                                                                                    Last: {aiScores[aiScores.length-1][1]}%
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     )}
                                                 </td>
