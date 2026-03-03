@@ -234,6 +234,43 @@ class StudentService:
         self.ai_grades[s_id][c_id][quiz_name] = score
         self._save_ai_grades()
 
+        # Update the student's progress cache immediately
+        cache_file = os.path.join(PROGRESS_DIR, f"progress_{student_id}_{course_id}.json")
+        cached_data = self._load_json_file(cache_file)
+        
+        # If cache exists, inject the new score
+        if cached_data:
+            if "quiz_scores" not in cached_data:
+                cached_data["quiz_scores"] = {}
+            
+            # Ensure the key format matches what we use in get_student_progress
+            key = f"[AI] {quiz_name}"
+            cached_data["quiz_scores"][key] = score
+            self._save_json_file(cache_file, cached_data)
+        else:
+            # If no cache, force a full sync (which will include the new AI grade)
+            self.sync_student_progress(student_id, course_id)
+            
+        # Also invalidate/update the course analytics cache if possible, or just let it be stale until sync
+        # Ideally, we should update the analytics cache too for the teacher dashboard
+        analytics_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
+        analytics_data = self._load_json_file(analytics_file)
+        
+        if analytics_data and "students" in analytics_data:
+            for s in analytics_data["students"]:
+                if str(s.get("id")) == s_id:
+                    # Update this student's scores in the analytics snapshot
+                    if "quiz_scores" not in s:
+                        s["quiz_scores"] = {}
+                    s["quiz_scores"][f"[AI] {quiz_name}"] = score
+                    
+                    # Recalculate average
+                    scores = list(s["quiz_scores"].values())
+                    if scores:
+                        s["avg_score"] = round(sum(scores) / len(scores), 1)
+                    break
+            self._save_json_file(analytics_file, analytics_data)
+
     def sync_course_analytics(self, course_id: int) -> Dict[str, Any]:
         """
         Forces a refresh of course analytics from Moodle and caches the result.
