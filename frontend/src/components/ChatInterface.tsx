@@ -139,11 +139,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         const history = await chatApi.getHistory(activeCourseId, activeStudentId);
         if (history.length > 0) {
           setMessages(
-            history.map((m) => ({
-              id: String(m.id),
-              role: m.role,
-              content: m.content,
-            }))
+            history.map((m) => {
+              if (m.role === 'assistant') {
+                let parsed: unknown = null;
+                try {
+                  parsed = JSON.parse(m.content);
+                } catch {
+                  parsed = null;
+                }
+
+                if (parsed && typeof parsed === 'object') {
+                  const obj = parsed as Record<string, unknown>;
+                  if (obj.type === 'quiz' && obj.quiz) {
+                  return {
+                    id: String(m.id),
+                    role: 'assistant',
+                    content: 'Here is a practice question based on your course content:',
+                    quiz: obj.quiz as QuizResponse,
+                    context: { courseId: activeCourseId, studentId: activeStudentId },
+                  } as Message;
+                  }
+                }
+              }
+
+              return {
+                id: String(m.id),
+                role: m.role,
+                content: m.content,
+              } as Message;
+            })
           );
         } else {
           setMessages([

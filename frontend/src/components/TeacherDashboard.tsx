@@ -139,9 +139,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             setIsSyncing(true);
             const data = await dashboardApi.syncAnalytics(courseId);
             setAnalytics(data);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to sync analytics:", error);
-            const detail = error.response?.data?.detail || "Unknown error";
+            const err = error as { response?: { data?: { detail?: string } }; message?: string };
+            const detail = err.response?.data?.detail || err.message || "Unknown error";
             alert(`Failed to sync analytics: ${detail}`);
         } finally {
             setIsSyncing(false);
