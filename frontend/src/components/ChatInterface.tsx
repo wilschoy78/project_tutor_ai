@@ -290,6 +290,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                 content = `### 🎯 Personalized Study Plan\n\nI've identified a few areas we can strengthen: **${path.weaknesses?.join(', ')}**.\n\nHere is your custom plan:\n\n${path.study_plan}`;
             }
 
+            // Append Teacher Recommendations if available
+            if (path.pinned_recommendations && path.pinned_recommendations.length > 0) {
+                content += `\n\n### 👩‍🏫 Teacher's Note:\n`;
+                path.pinned_recommendations.forEach(rec => {
+                    content += `> ${rec}\n`;
+                });
+            }
+
             return [...newMsgs, {
                 id: Date.now().toString(),
                 role: 'assistant',
