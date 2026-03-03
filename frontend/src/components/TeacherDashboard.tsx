@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle } from 'lucide-react';
+import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion } from 'lucide-react';
 import {
     dashboardApi,
     chatApi,
     moodleApi,
     studentApi,
+    teacherApi,
     type DashboardAnalytics,
     type MoodleCourse,
     type StudentProfile,
-    type StudentAnalytics
+    type StudentAnalytics,
+    type PendingQuiz
 } from '../api/client';
 
 interface LearningPathWeaknessDetail {
@@ -74,6 +76,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     });
     const [isSavingProfile, setIsSavingProfile] = useState(false);
 
+    // Quiz Management State
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'quizzes'>('dashboard');
+    const [pendingQuizzes, setPendingQuizzes] = useState<PendingQuiz[]>([]);
+    const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
+    const [generateTopic, setGenerateTopic] = useState('');
+
     useEffect(() => {
         if (initialCourseId) {
             setCourseId(initialCourseId);
@@ -108,6 +116,57 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     useEffect(() => {
         loadDashboard();
     }, [loadDashboard]);
+
+    const loadPendingQuizzes = useCallback(async () => {
+        try {
+            setIsLoadingQuizzes(true);
+            const data = await teacherApi.getPendingQuizzes(courseId);
+            setPendingQuizzes(data);
+        } catch (error) {
+            console.error("Failed to load pending quizzes", error);
+        } finally {
+            setIsLoadingQuizzes(false);
+        }
+    }, [courseId]);
+
+    useEffect(() => {
+        if (activeTab === 'quizzes') {
+            loadPendingQuizzes();
+        }
+    }, [activeTab, loadPendingQuizzes]);
+
+    const handleApproveQuiz = async (quizId: string) => {
+        try {
+            await teacherApi.approveQuiz(courseId, quizId);
+            setPendingQuizzes(prev => prev.filter(q => q.id !== quizId));
+        } catch (error) {
+            alert("Failed to approve quiz");
+        }
+    };
+
+    const handleRejectQuiz = async (quizId: string) => {
+        try {
+            await teacherApi.rejectQuiz(courseId, quizId);
+            setPendingQuizzes(prev => prev.filter(q => q.id !== quizId));
+        } catch (error) {
+            alert("Failed to reject quiz");
+        }
+    };
+
+    const handleGenerateQuizzes = async () => {
+        if (!generateTopic) return;
+        try {
+            setIsLoadingQuizzes(true);
+            // Generate 3 candidates at a time
+            await teacherApi.generateQuizCandidates(courseId, generateTopic, 3);
+            await loadPendingQuizzes();
+            setGenerateTopic('');
+        } catch (error) {
+            alert("Failed to generate quizzes");
+        } finally {
+            setIsLoadingQuizzes(false);
+        }
+    };
 
     const handleViewPlan = async (studentId: number, studentName: string) => {
         setSelectedStudent({ id: studentId, name: studentName });
@@ -263,7 +322,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     return (
         <div className="flex flex-col h-screen bg-gray-50 sm:max-w-6xl sm:mx-auto sm:border-x sm:border-gray-200">
             <header className="bg-white border-b border-gray-200 px-4 py-4 sm:p-6 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-600 p-2 rounded-lg">
                             <BarChart3 className="w-6 h-6 text-white" />
@@ -343,10 +402,129 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         )}
                     </div>
                 </div>
+
+                <div className="flex gap-4 border-b border-gray-100">
+                    <button
+                        onClick={() => setActiveTab('dashboard')}
+                        className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
+                            activeTab === 'dashboard' 
+                            ? 'border-indigo-600 text-indigo-600' 
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        Overview
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('quizzes')}
+                        className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
+                            activeTab === 'quizzes' 
+                            ? 'border-indigo-600 text-indigo-600' 
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        Pending Quizzes
+                    </button>
+                </div>
             </header>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:p-6">
-                {isLoading ? (
+                {activeTab === 'quizzes' ? (
+                    <div className="space-y-6">
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h2 className="text-lg font-bold text-gray-900 mb-4">AI Question Generator</h2>
+                            <div className="flex gap-3">
+                                <input
+                                    type="text"
+                                    value={generateTopic}
+                                    onChange={(e) => setGenerateTopic(e.target.value)}
+                                    placeholder="Enter a topic (e.g., 'Python Functions', 'Course Introduction')"
+                                    className="flex-1 p-2 border border-gray-300 rounded-md text-sm"
+                                />
+                                <button
+                                    onClick={handleGenerateQuizzes}
+                                    disabled={isLoadingQuizzes || !generateTopic}
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isLoadingQuizzes ? <Loader2 className="w-4 h-4 animate-spin" /> : <BrainCircuit className="w-4 h-4" />}
+                                    Generate Candidates
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <FileQuestion className="w-5 h-5 text-gray-500" />
+                                Pending Review ({pendingQuizzes.length})
+                            </h2>
+                            
+                            {isLoadingQuizzes && pendingQuizzes.length === 0 ? (
+                                <div className="text-center py-10 text-gray-500">Loading quizzes...</div>
+                            ) : pendingQuizzes.length === 0 ? (
+                                <div className="text-center py-10 bg-white rounded-xl border border-gray-200 text-gray-500">
+                                    No pending quizzes. Generate some above!
+                                </div>
+                            ) : (
+                                pendingQuizzes.map((quiz) => (
+                                    <div key={quiz.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <span className="inline-block px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md mb-2 font-medium">
+                                                    {quiz.topic}
+                                                </span>
+                                                <h3 className="text-lg font-medium text-gray-900">{quiz.question}</h3>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleApproveQuiz(quiz.id)}
+                                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                                    title="Approve"
+                                                >
+                                                    <CheckCircle className="w-5 h-5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRejectQuiz(quiz.id)}
+                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="Reject"
+                                                >
+                                                    <XCircle className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                                            {quiz.options.map((option, idx) => (
+                                                <div 
+                                                    key={idx}
+                                                    className={`p-3 rounded-lg border text-sm ${
+                                                        option === quiz.correct_answer
+                                                        ? 'bg-green-50 border-green-200 text-green-800 font-medium'
+                                                        : 'bg-gray-50 border-gray-200 text-gray-700'
+                                                    }`}
+                                                >
+                                                    {option}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex gap-2">
+                                                <span className="font-semibold text-gray-700">Explanation:</span>
+                                                <span className="text-gray-600">{quiz.explanation}</span>
+                                            </div>
+                                            {quiz.hint && (
+                                                <div className="flex gap-2">
+                                                    <span className="font-semibold text-gray-700">Hint:</span>
+                                                    <span className="text-gray-600 italic">{quiz.hint}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                isLoading ? (
                     <div className="text-center py-20 text-gray-500">Loading analytics...</div>
                 ) : analytics ? (
                     <div className="space-y-6">
@@ -551,7 +729,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                     </div>
                 ) : (
                     <div className="text-center py-20 text-gray-500">No data available</div>
-                )}
+                ))}
             </div>
 
             {/* Learning Path Modal */}

@@ -192,3 +192,35 @@ export const moodleApi = {
         return response.data;
     }
 };
+
+export interface PendingQuiz {
+    id: string;
+    course_id: number;
+    topic: string;
+    question: string;
+    options: string[];
+    correct_answer: string;
+    explanation: string;
+    hint?: string;
+    status: string;
+    created_at: number;
+}
+
+export const teacherApi = {
+    getPendingQuizzes: async (courseId: number) => {
+        const response = await api.get<PendingQuiz[]>('/ai/quizzes/pending', { params: { course_id: courseId } });
+        return response.data;
+    },
+    generateQuizCandidates: async (courseId: number, topic: string, count: number = 1) => {
+        const response = await api.post<PendingQuiz[]>('/ai/quizzes/generate', { course_id: courseId, topic, count });
+        return response.data;
+    },
+    approveQuiz: async (courseId: number, quizId: string) => {
+        const response = await api.post(`/ai/quizzes/${quizId}/approve`, null, { params: { course_id: courseId } });
+        return response.data;
+    },
+    rejectQuiz: async (courseId: number, quizId: string) => {
+        const response = await api.post(`/ai/quizzes/${quizId}/reject`, null, { params: { course_id: courseId } });
+        return response.data;
+    }
+};
