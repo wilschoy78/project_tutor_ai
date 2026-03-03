@@ -326,11 +326,24 @@ class StudentService:
                     name = q_name
                     if name.startswith("[AI] "):
                         name = name[5:]
-                    # Simple heuristic: remove "Quiz:" and parens
+                    
+                    # Enhanced cleaning logic
+                    # 1. Remove "Quiz:" prefix and trailing timestamps/IDs in parens
                     base = name.split("(")[0].strip()
-                    base = base.replace("Quiz:", "").replace("Quiz", "").replace("Test", "").strip()
-                    if not base:
-                        base = "General"
+                    
+                    # 2. Remove common prefixes like "1 - ", "2 - ", "Quiz 1 - "
+                    base = re.sub(r'^(?:Quiz\s*)?\d+\s*-\s*', '', base, flags=re.IGNORECASE)
+                    
+                    # 3. Remove "Quiz" or "Test" if it's the only word, or at the end
+                    base = base.replace("Pop Quiz", "General Review") # Special case for AI quizzes
+                    base = re.sub(r'\s+Quiz$', '', base, flags=re.IGNORECASE)
+                    base = re.sub(r'\s+Test$', '', base, flags=re.IGNORECASE)
+                    
+                    base = base.strip()
+                    
+                    # 4. Fallback if empty
+                    if not base or base.lower() == "general":
+                        base = "General Course Concepts"
                     
                     if base not in topic_map:
                         topic_map[base] = []
