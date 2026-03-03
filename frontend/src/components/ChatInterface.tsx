@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, BookOpen, Loader2, User, Bot, BrainCircuit } from 'lucide-react';
+import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw } from 'lucide-react';
 import { chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
 import { cn } from '../lib/utils';
 
@@ -90,6 +90,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
   const [activeCourseId, setActiveCourseId] = useState(initialCourseId || 2); // Default to Course 2 (Intro to AI Tutor)
   const [activeStudentId, setActiveStudentId] = useState(initialStudentId || 3); // Default to Alice (ID 3 in Moodle)
   const [courses, setCourses] = useState<MoodleCourse[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -264,6 +265,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
     }
   };
 
+  const handleSyncProgress = async () => {
+    try {
+        setIsSyncing(true);
+        await chatApi.syncProgress(activeCourseId, activeStudentId);
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: "I've synced your latest progress from Moodle. Your learning path will now reflect your most recent quiz scores."
+        }]);
+    } catch (error) {
+        console.error('Failed to sync progress:', error);
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: "Failed to sync progress. Please try again later."
+        }]);
+    } finally {
+        setIsSyncing(false);
+    }
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,15 +390,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
 
             <button 
                 onClick={handleGetLearningPath}
-                disabled={isLoading}
+                disabled={isLoading || isSyncing}
                 className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
             >
                 <BookOpen className="w-4 h-4" />
                 My Learning Path
             </button>
             <button 
+                onClick={handleSyncProgress}
+                disabled={isLoading || isSyncing}
+                className="px-4 py-2 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
+                title="Sync my progress from Moodle"
+            >
+                <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
+                Sync
+            </button>
+            <button 
                 onClick={handleGenerateQuiz}
-                disabled={isLoading}
+                disabled={isLoading || isSyncing}
                 className="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
             >
                 <BrainCircuit className="w-4 h-4" />
@@ -384,7 +415,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             </button>
             <button 
                 onClick={handleIngest}
-                disabled={isLoading}
+                disabled={isLoading || isSyncing}
                 className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
             >
                 Refresh Content

@@ -8,9 +8,11 @@ from app.services.moodle_client import moodle_client
 # Define data directories
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 ANALYTICS_DIR = os.path.join(DATA_DIR, "analytics")
+PROGRESS_DIR = os.path.join(DATA_DIR, "progress")
 
 # Ensure directories exist
 os.makedirs(ANALYTICS_DIR, exist_ok=True)
+os.makedirs(PROGRESS_DIR, exist_ok=True)
 
 AI_GRADES_FILE = os.path.join(DATA_DIR, "ai_grades.json")
 STUDENT_PROFILES_FILE = os.path.join(DATA_DIR, "student_profiles.json")
@@ -144,7 +146,19 @@ class StudentService:
 
     def get_student_progress(self, student_id: int, course_id: int) -> Dict[str, Any]:
         """
-        Fetches student grades and completion status from Moodle.
+        Fetches student grades and completion status.
+        Tries to read from cache first, unless it's stale (not implemented here) or missing.
+        """
+        cache_file = os.path.join(PROGRESS_DIR, f"progress_{student_id}_{course_id}.json")
+        cached_data = self._load_json_file(cache_file)
+        if cached_data:
+            return cached_data
+            
+        return self.sync_student_progress(student_id, course_id)
+
+    def sync_student_progress(self, student_id: int, course_id: int) -> Dict[str, Any]:
+        """
+        Fetches fresh progress from Moodle and updates cache.
         """
         try:
             # 1. Fetch Grades
@@ -189,10 +203,17 @@ class StudentService:
                 for q_name, q_score in ai_scores.items():
                     quiz_scores[f"[AI] {q_name}"] = q_score
 
-            return {
+            progress_data = {
                 "completed_modules": [], # TODO: Use core_completion_get_course_completion_status
-                "quiz_scores": quiz_scores
+                "quiz_scores": quiz_scores,
+                "last_synced": "now" # In real app use timestamp
             }
+            
+            # Save to cache
+            cache_file = os.path.join(PROGRESS_DIR, f"progress_{student_id}_{course_id}.json")
+            self._save_json_file(cache_file, progress_data)
+            
+            return progress_data
             
         except Exception as e:
             print(f"Error fetching progress: {e}")
@@ -245,12 +266,14 @@ class StudentService:
             
             detailed_students = []
 
-            for user in filtered_users[:20]:
+            # We iterate up to 50 students for safety in this demo, but ideally paginate or handle background task
+            for user in filtered_users[:50]:
                 uid = user["id"]
                 fullname = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip()
 
                 profile = self.get_student_profile(uid)
-                progress = self.get_student_progress(uid, course_id)
+                # Force sync individual progress as well
+                progress = self.sync_student_progress(uid, course_id)
 
                 student_scores = list(progress.get("quiz_scores", {}).values())
                 avg_score = sum(student_scores) / len(student_scores) if student_scores else 0

@@ -86,12 +86,27 @@ class LearningPathRequest(BaseModel):
 @router.post("/learning-path")
 def get_learning_path(request: LearningPathRequest):
     try:
+        # We assume the progress is already synced or cached.
+        # If the frontend wants to force a sync, we might need a flag.
+        # For now, we rely on the cache in student_service.get_student_progress
         result = rag_service.generate_learning_path(request.course_id, request.student_id)
         overrides = student_service.get_learning_path_overrides(request.student_id, request.course_id)
         if isinstance(overrides, dict):
             pinned = overrides.get("pinned_recommendations") or []
             result["pinned_recommendations"] = pinned
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/progress/sync")
+def sync_student_progress(request: LearningPathRequest):
+    """
+    Force sync of student progress from Moodle.
+    """
+    try:
+        progress = student_service.sync_student_progress(request.student_id, request.course_id)
+        return progress
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

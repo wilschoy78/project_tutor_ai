@@ -104,6 +104,14 @@ export const chatApi = {
       student_id: studentId
     });
     return response.data;
+  },
+
+  syncProgress: async (courseId: number, studentId: number) => {
+    const response = await api.post('/ai/progress/sync', {
+        course_id: courseId,
+        student_id: studentId
+    });
+    return response.data;
   }
 };
 
