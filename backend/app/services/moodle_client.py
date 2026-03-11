@@ -231,7 +231,7 @@ class MoodleClient:
             }
         return self.save_assignment_grade(assignment_id, user_id, grade)
 
-    def download_file(self, file_url: str) -> Optional[bytes]:
+    def download_file(self, file_url: str, max_bytes: Optional[int] = None) -> Optional[bytes]:
         """
         Download a file from Moodle using the token.
         """
@@ -246,9 +246,20 @@ class MoodleClient:
             
         try:
             print(f"Downloading file from Moodle: {file_url}")
-            response = requests.get(url_with_token)
+            response = requests.get(url_with_token, stream=True, timeout=30)
             response.raise_for_status()
-            return response.content
+            if max_bytes is None:
+                return response.content
+
+            data = bytearray()
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    print(f"Skipped file download (over {max_bytes} bytes): {file_url}")
+                    return None
+            return bytes(data)
         except requests.RequestException as e:
             print(f"Error downloading file {file_url}: {e}")
             return None

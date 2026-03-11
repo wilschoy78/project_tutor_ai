@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     MODEL_NAME: str = "mistral"
 
+    CHROMA_PERSIST_DIR: str = "./chroma_db"
+    INGEST_EMBED_BATCH_SIZE: int = 32
+    MAX_INGEST_FILE_BYTES: int = 8_000_000
+    MAX_PDF_PAGES: int = 10
+    MAX_DOCX_CHARS: int = 120_000
+    MAX_MODULE_TEXT_CHARS: int = 200_000
+
     class Config:
         env_file = ".env"
         env_file_encoding = 'utf-8'
