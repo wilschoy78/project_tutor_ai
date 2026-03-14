@@ -11,7 +11,7 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - MODEL_NAME=llama-3.1-8b-instant
-      - USE_MOCK_MOODLE=False
+      - ENABLE_MOCK_MOODLE=False
     volumes:
       - ./backend/chroma_db:/app/chroma_db
     extra_hosts:

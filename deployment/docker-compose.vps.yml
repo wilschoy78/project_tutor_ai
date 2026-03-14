@@ -20,7 +20,7 @@ services:
       
       - PROJECT_NAME="Teacher-Tutor AI"
       # In production, we should try to use real Moodle if token is valid
-      - USE_MOCK_MOODLE=${USE_MOCK_MOODLE:-True}
+      - ENABLE_MOCK_MOODLE=${ENABLE_MOCK_MOODLE:-True}
     networks:
       - ai_tutor_net
 

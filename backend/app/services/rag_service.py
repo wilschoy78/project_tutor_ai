@@ -1,6 +1,5 @@
 import re
 import io
-import gc
 try:
     from pypdf import PdfReader
 except ImportError:
@@ -14,10 +13,7 @@ except ImportError:
     print("Warning: python-docx not installed. DOCX parsing will be disabled.")
 
 from typing import List, Dict, Any, Optional
-try:
-    from langchain_chroma import Chroma
-except ImportError:
-    from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_community.embeddings import FastEmbedEmbeddings # Lightweight CPU embeddings
 try:
@@ -91,7 +87,7 @@ class RAGService:
         # Initialize Vector Store (ChromaDB)
         # Persistent storage in ./chroma_db
         self.vector_store = Chroma(
-            persist_directory=settings.CHROMA_PERSIST_DIR,
+            persist_directory="./chroma_db",
             embedding_function=self.embeddings,
             collection_name="moodle_content"
         )
@@ -115,10 +111,23 @@ class RAGService:
         """
         print(f"Ingesting content for course {course_id}...")
         
+        # 0. Clear existing content for this course to prevent duplicates
         try:
-            cleared = self.clear_knowledge_base(course_id)
-            deleted = int(cleared.get("deleted", 0)) if isinstance(cleared, dict) else 0
-            print(f"Clearing existing vector data for course {course_id}... deleted={deleted}")
+            # Note: Chroma's delete might throw if collection is empty or other issues, so we wrap in try/except
+            print(f"Clearing existing vector data for course {course_id}...")
+            # We need to get ids to delete, or use where clause if supported by the wrapper
+            # LangChain's Chroma wrapper .delete() expects IDs. 
+            # So we first get all IDs for this course.
+            
+            # Using the underlying client to get IDs
+            existing_docs = self.vector_store.get(where={"course_id": course_id})
+            if existing_docs and existing_docs['ids']:
+                print(f"Deleting {len(existing_docs['ids'])} existing documents...")
+                self.vector_store.delete(ids=existing_docs['ids'])
+                print("Deletion complete.")
+            else:
+                print("No existing documents found for this course.")
+                
         except Exception as e:
             print(f"Warning during cleanup: {e}")
 
@@ -134,14 +143,8 @@ class RAGService:
         # For now, we will fetch generic activity structure, not individual student grades for the RAG.
         # If the user wants to ingest *aggregated* stats, that's safer.
         
-        pending_chunks: List[Document] = []
-        total_chunks = 0
-        batch_size = max(1, int(getattr(settings, "INGEST_EMBED_BATCH_SIZE", 32)))
-        max_module_chars = max(10_000, int(getattr(settings, "MAX_MODULE_TEXT_CHARS", 200_000)))
-        max_file_bytes = max(1_000_000, int(getattr(settings, "MAX_INGEST_FILE_BYTES", 8_000_000)))
-        max_pdf_pages = max(1, int(getattr(settings, "MAX_PDF_PAGES", 10)))
-        max_docx_chars = max(10_000, int(getattr(settings, "MAX_DOCX_CHARS", 120_000)))
-
+        documents = []
+        
         # 2. Process content into Documents
         for section in contents:
             section_name = section.get("name", "Unnamed Section")
@@ -192,24 +195,21 @@ class RAGService:
                                  if PdfReader:
                                      try:
                                          print(f"Downloading PDF: {item['filename']}")
-                                         file_bytes = moodle_client.download_file(item["fileurl"], max_bytes=max_file_bytes)
+                                         file_bytes = moodle_client.download_file(item["fileurl"])
                                          if file_bytes:
                                              file_obj = io.BytesIO(file_bytes)
                                              reader = PdfReader(file_obj)
-                                             extracted_pages: List[str] = []
-                                             for page in reader.pages[:max_pdf_pages]:
+                                             pdf_text = ""
+                                             for page in reader.pages:
                                                  extracted = page.extract_text()
                                                  if extracted:
-                                                     extracted_pages.append(extracted)
+                                                     pdf_text += extracted + "\n"
                                              
-                                             pdf_text = "\n".join(extracted_pages).strip()
                                              if pdf_text:
                                                  content_text += f"--- PDF CONTENT START ({item['filename']}) ---\n{pdf_text}\n--- PDF CONTENT END ---\n"
                                                  print(f"Extracted {len(pdf_text)} chars from PDF.")
                                              else:
                                                  print("PDF was empty or unreadable.")
-                                         else:
-                                             content_text += f"[Skipped PDF ({item['filename']}) due to size limits]\n"
                                      except Exception as e:
                                          print(f"Error parsing PDF {item['filename']}: {e}")
                                          content_text += f"[Error reading PDF content: {str(e)}]\n"
@@ -227,21 +227,17 @@ class RAGService:
                                  if docx:
                                      try:
                                          print(f"Downloading DOCX: {item['filename']}")
-                                         file_bytes = moodle_client.download_file(item["fileurl"], max_bytes=max_file_bytes)
+                                         file_bytes = moodle_client.download_file(item["fileurl"])
                                          if file_bytes:
                                              file_obj = io.BytesIO(file_bytes)
                                              doc_file = docx.Document(file_obj)
                                              docx_text = "\n".join([para.text for para in doc_file.paragraphs])
-                                             if len(docx_text) > max_docx_chars:
-                                                 docx_text = docx_text[:max_docx_chars]
                                              
                                              if docx_text:
                                                  content_text += f"--- DOCX CONTENT START ({item['filename']}) ---\n{docx_text}\n--- DOCX CONTENT END ---\n"
                                                  print(f"Extracted {len(docx_text)} chars from DOCX.")
                                              else:
                                                  print("DOCX was empty or unreadable.")
-                                         else:
-                                             content_text += f"[Skipped DOCX ({item['filename']}) due to size limits]\n"
                                      except Exception as e:
                                          print(f"Error parsing DOCX {item['filename']}: {e}")
                                          content_text += f"[Error reading DOCX content: {str(e)}]\n"
@@ -251,9 +247,6 @@ class RAGService:
                              # DOC Extraction Logic (Warning)
                              if item['filename'].lower().endswith(".doc"):
                                  content_text += f"[WARNING: .doc file ({item['filename']}) skipped. Please convert to .docx or PDF for AI ingestion.]\n"
-
-                if len(content_text) > max_module_chars:
-                    content_text = content_text[:max_module_chars]
 
                 doc = Document(
                     page_content=content_text,
@@ -265,29 +258,23 @@ class RAGService:
                         "section": section_name
                     }
                 )
-
-                module_chunks = self.text_splitter.split_documents([doc])
-                if module_chunks:
-                    pending_chunks.extend(module_chunks)
-
-                if len(pending_chunks) >= batch_size:
-                    self.vector_store.add_documents(pending_chunks)
-                    total_chunks += len(pending_chunks)
-                    pending_chunks = []
-
-        if pending_chunks:
-            self.vector_store.add_documents(pending_chunks)
-            total_chunks += len(pending_chunks)
-            pending_chunks = []
-
-        gc.collect()
-
-        if total_chunks <= 0:
+                documents.append(doc)
+        
+        if not documents:
             print("No documents found to ingest.")
             return {"status": "warning", "message": "No content found"}
 
-        print(f"Ingested {total_chunks} chunks for course {course_id}")
-        return {"status": "success", "chunks_count": total_chunks}
+        # 3. Split and Store
+        try:
+            chunks = self.text_splitter.split_documents(documents)
+            self.vector_store.add_documents(chunks)
+            self.vector_store.persist()
+        except Exception as e:
+            print(f"Error during vector store ingestion for course {course_id}: {e}")
+            raise
+        
+        print(f"Ingested {len(chunks)} chunks for course {course_id}")
+        return {"status": "success", "chunks_count": len(chunks)}
 
     def ask_question(self, course_id: int, question: str, student_id: int = 1):
         """
@@ -373,6 +360,20 @@ class RAGService:
         )
         docs = retriever.invoke(topic)
         context_text = "\n\n".join([doc.page_content for doc in docs])
+        context_text = context_text.strip()
+        if not context_text:
+            return {
+                "question": f"Unable to generate a quiz for '{topic}' because no matching course content was retrieved.",
+                "options": [
+                    "Ingest the course content first",
+                    "Try a topic that appears in the course materials",
+                    "Ask the teacher to add resources for this topic",
+                    "Retry after content synchronization"
+                ],
+                "correct_answer": "Ingest the course content first",
+                "explanation": "Quiz generation is grounded in Moodle course materials. The system did not retrieve any relevant chunks for this topic, which usually means the course was not ingested or the topic is not present in the uploaded resources.",
+                "hint": "Use the Teacher Dashboard “Ingest Course” action, then retry with a topic from the course."
+            }
         
         # 2. Prompt for Quiz Generation
         template = """
@@ -402,30 +403,141 @@ class RAGService:
         chain = prompt | self.llm
         
         # 3. Execute
-        response = chain.invoke({"topic": topic, "context": context_text})
+        quiz_llm = self.llm.bind(temperature=0.2) if hasattr(self.llm, "bind") else self.llm
+        response = (prompt | quiz_llm).invoke({"topic": topic, "context": context_text})
         
         # 4. Parse JSON
         import json
-        try:
-            content = response.content.strip()
-            # Remove markdown code blocks if present
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-            
-            quiz_data = json.loads(content)
-            return quiz_data
-        except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
-            print(f"Failed to parse quiz JSON: {response.content}")
-            return {
-                "question": f"Could not generate a structured quiz for {topic}. Please try again.",
-                "options": ["Error"],
-                "correct_answer": "Error",
-                "explanation": "The model failed to produce valid JSON."
+        raw = response.content if hasattr(response, "content") else str(response)
+
+        def _strip_fences(text: str) -> str:
+            t = (text or "").strip()
+            t = re.sub(r"^```(?:json)?\s*", "", t, flags=re.IGNORECASE)
+            t = re.sub(r"\s*```$", "", t)
+            return t.strip()
+
+        def _extract_json_object(text: str) -> str:
+            t = _strip_fences(text)
+            m = re.search(r"\{[\s\S]*\}", t)
+            return m.group(0).strip() if m else t
+
+        def _normalize_quiz_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+            question = str(data.get("question", "")).strip()
+            options = data.get("options", [])
+            correct = data.get("correct_answer")
+            explanation = str(data.get("explanation", "")).strip()
+            hint = data.get("hint")
+
+            if not isinstance(options, list):
+                options = []
+            options = [str(o).strip() for o in options if str(o).strip()]
+
+            if isinstance(correct, (int, float)) and options:
+                idx = int(correct)
+                if 0 <= idx < len(options):
+                    correct = options[idx]
+
+            if isinstance(correct, str):
+                c = correct.strip()
+                letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                if c.upper() in letter_map and len(options) >= 4:
+                    correct = options[letter_map[c.upper()]]
+                else:
+                    for opt in options:
+                        if opt.lower() == c.lower():
+                            correct = opt
+                            break
+
+            normalized = {
+                "question": question,
+                "options": options,
+                "correct_answer": str(correct).strip() if correct is not None else "",
+                "explanation": explanation,
             }
+            if hint is not None:
+                normalized["hint"] = str(hint).strip()
+            return normalized
+
+        def _is_valid_quiz(data: Dict[str, Any]) -> bool:
+            if not data.get("question"):
+                return False
+            options = data.get("options")
+            if not isinstance(options, list) or len(options) < 2:
+                return False
+            correct = data.get("correct_answer")
+            if not isinstance(correct, str) or not correct.strip():
+                return False
+            if correct not in options:
+                return False
+            if not data.get("explanation"):
+                return False
+            return True
+
+        parsed: Optional[Dict[str, Any]] = None
+        parse_candidates = [_strip_fences(raw), _extract_json_object(raw)]
+        for cand in parse_candidates:
+            try:
+                obj = json.loads(cand)
+                if isinstance(obj, dict):
+                    normalized = _normalize_quiz_payload(obj)
+                    if _is_valid_quiz(normalized):
+                        parsed = normalized
+                        break
+            except Exception:
+                continue
+
+        if parsed is None:
+            fix_template = """
+You are fixing a quiz payload to be valid JSON for an automated parser.
+
+Return ONLY a raw JSON object (no markdown, no commentary) with this exact structure:
+{
+  "question": "string",
+  "options": ["string", "string", "string", "string"],
+  "correct_answer": "string (must match one of the options exactly)",
+  "explanation": "string",
+  "hint": "string"
+}
+
+Topic: {topic}
+
+Course Content (must ground the quiz):
+{context}
+
+Bad/Unstructured Output To Fix:
+{bad_output}
+"""
+            fix_prompt = PromptTemplate(
+                template=fix_template,
+                input_variables=["topic", "context", "bad_output"]
+            )
+            fixer_llm = self.llm.bind(temperature=0) if hasattr(self.llm, "bind") else self.llm
+            fixed_response = (fix_prompt | fixer_llm).invoke(
+                {"topic": topic, "context": context_text, "bad_output": raw}
+            )
+            fixed_raw = fixed_response.content if hasattr(fixed_response, "content") else str(fixed_response)
+            for cand in [_strip_fences(fixed_raw), _extract_json_object(fixed_raw)]:
+                try:
+                    obj = json.loads(cand)
+                    if isinstance(obj, dict):
+                        normalized = _normalize_quiz_payload(obj)
+                        if _is_valid_quiz(normalized):
+                            parsed = normalized
+                            break
+                except Exception:
+                    continue
+
+        if parsed is not None:
+            return parsed
+
+        print("Quiz generation failed to produce valid JSON. First 300 chars:", (raw or "")[:300])
+        return {
+            "question": f"Could not generate a structured quiz for {topic}. Please try again.",
+            "options": ["Ingest the course content first", "Try a different topic"],
+            "correct_answer": "Ingest the course content first",
+            "explanation": "The model did not return a valid structured quiz payload. This can happen when the retrieved course context is insufficient or the model output format drifts.",
+            "hint": "Ingest the course and retry with a topic present in the course materials."
+        }
 
     def generate_study_plan(self, course_id: int, weaknesses: List[str], weakness_details: Optional[List[Dict[str, Any]]] = None):
         if not weaknesses:
@@ -595,6 +707,7 @@ Your Personalized Study Plan:
             )
             
             self.vector_store.add_documents([doc])
+            self.vector_store.persist()
             print(f"Ingested analytics summary for course {course_id}")
             return {"status": "success"}
         except Exception as e:
@@ -614,11 +727,8 @@ Your Personalized Study Plan:
             # Using the underlying Chroma client if available, or just the wrapper
             # The wrapper self.vector_store is a Chroma object.
             
-            collection = getattr(self.vector_store, "_collection", None)
-            if collection is not None:
-                result = collection.get(where={"course_id": course_id}, include=["metadatas"])
-            else:
-                result = self.vector_store.get(where={"course_id": course_id})
+            # Use get() method of the underlying collection
+            result = self.vector_store.get(where={"course_id": course_id})
             
             if not result or not result['ids']:
                 return {"course_id": course_id, "document_count": 0, "sources": []}
@@ -655,15 +765,12 @@ Your Personalized Study Plan:
         Deletes all ingested documents for a specific course from the vector store.
         """
         try:
-            collection = getattr(self.vector_store, "_collection", None)
-            if collection is not None:
-                existing_docs = collection.get(where={"course_id": course_id}, include=[])
-            else:
-                existing_docs = self.vector_store.get(where={"course_id": course_id})
+            existing_docs = self.vector_store.get(where={"course_id": course_id})
             if not existing_docs or not existing_docs["ids"]:
                 return {"status": "success", "deleted": 0}
             ids = existing_docs["ids"]
             self.vector_store.delete(ids=ids)
+            self.vector_store.persist()
             return {"status": "success", "deleted": len(ids)}
         except Exception as e:
             print(f"Error clearing knowledge base: {e}")
