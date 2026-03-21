@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw } from 'lucide-react';
 import { chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
-import { cn } from '../lib/utils';
+import { actionButtonClass, cn } from '../lib/utils';
 
 interface Message {
   id: string;
@@ -471,7 +471,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleGetLearningPath}
                 disabled={isLoading || isSyncing}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
+                className={actionButtonClass("primary")}
+                title="Generate your personalized learning path based on your Moodle progress and quiz results."
             >
                 <BookOpen className="w-4 h-4" />
                 My Learning Path
@@ -479,8 +480,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleSyncProgress}
                 disabled={isLoading || isSyncing}
-                className="px-4 py-2 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
-                title="Sync my progress from Moodle"
+                className={actionButtonClass("info")}
+                title="Sync your latest Moodle completion and quiz data so the tutor can personalize help."
             >
                 <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
                 Sync
@@ -488,7 +489,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleGenerateQuiz}
                 disabled={isLoading || isSyncing}
-                className="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
+                className={actionButtonClass("secondary")}
+                title="Generate a short practice quiz grounded in your current course materials."
             >
                 <BrainCircuit className="w-4 h-4" />
                 Pop Quiz
@@ -496,7 +498,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <button 
                 onClick={handleIngest}
                 disabled={isLoading || isSyncing}
-                className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
+                className={actionButtonClass("success")}
+                title="Refresh the knowledge base by re-ingesting the latest course content from Moodle."
             >
                 Refresh Content
             </button>

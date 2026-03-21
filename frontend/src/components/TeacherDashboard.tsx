@@ -12,6 +12,7 @@ import {
     type StudentAnalytics,
     type PendingQuiz
 } from '../api/client';
+import { actionButtonClass, cn } from '../lib/utils';
 
 interface LearningPathWeaknessDetail {
     topic: string;
@@ -338,19 +339,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         <button
                             onClick={handleSync}
                             disabled={isSyncing}
-                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto ${
-                                isSyncing 
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                            }`}
+                            className={actionButtonClass("info")}
+                            title="Sync latest Moodle data (students, quizzes, engagement) and refresh dashboard analytics."
                         >
-                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
                             {isSyncing ? 'Syncing...' : 'Sync Data'}
                         </button>
 
                         <button
                             onClick={handleViewKb}
-                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors w-full sm:w-auto"
+                            className={actionButtonClass("primary")}
+                            title="View what course materials are currently ingested and available for AI grounded answers."
                         >
                             <BookOpen className="w-4 h-4" />
                             View Knowledge Base
@@ -359,11 +358,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         <button
                             onClick={handleIngest}
                             disabled={isIngesting}
-                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto ${
-                                isIngesting 
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                            }`}
+                            className={actionButtonClass("success")}
+                            title="Extract, chunk, and index this course content into the AI knowledge base."
                         >
                             {isIngesting ? (
                                 <RefreshCw className="w-4 h-4 animate-spin" />
