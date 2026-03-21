@@ -1,10 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+import html
 from app.services.rag_service import rag_service
 from app.services.student_service import student_service
 from app.services.conversation_service import conversation_service
 from app.services.quiz_service import quiz_service
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -81,6 +84,295 @@ def get_knowledge_base(course_id: int):
     try:
         result = rag_service.get_knowledge_base_summary(course_id)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/knowledge-base/{course_id}/view", response_class=HTMLResponse)
+def view_knowledge_base(course_id: int, request: Request):
+    try:
+        result = rag_service.get_knowledge_base_summary(course_id)
+        sources = result.get("sources") if isinstance(result, dict) else None
+        if not isinstance(sources, list):
+            sources = []
+
+        root_path = request.scope.get("root_path") or ""
+        api_prefix = f"{root_path}{settings.API_V1_STR}"
+        delete_url = f"{api_prefix}/ai/knowledge-base/{course_id}"
+        json_url = f"{api_prefix}/ai/knowledge-base/{course_id}"
+        home_url = f"{root_path}/"
+
+        rows = []
+        for s in sources:
+            if not isinstance(s, dict):
+                continue
+            name = html.escape(str(s.get("name", "")))
+            type_ = html.escape(str(s.get("type", "")))
+            chunks = html.escape(str(s.get("chunks", "")))
+            rows.append(
+                f"<tr>"
+                f"<td class='td name'>{name}</td>"
+                f"<td class='td type'>{type_}</td>"
+                f"<td class='td chunks'>{chunks}</td>"
+                f"</tr>"
+            )
+
+        document_count = html.escape(str(result.get("document_count", 0))) if isinstance(result, dict) else "0"
+
+        html_content = f"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Course Knowledge Base</title>
+    <style>
+      :root {{
+        --bg: #f9fafb;
+        --card: #ffffff;
+        --border: #e5e7eb;
+        --muted: #6b7280;
+        --text: #111827;
+        --indigo: #4f46e5;
+        --red: #dc2626;
+        --shadow: 0 10px 25px rgba(0,0,0,0.10);
+      }}
+      body {{
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      }}
+      .wrap {{
+        max-width: 980px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }}
+      .modal {{
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }}
+      .header {{
+        padding: 20px 20px 12px 20px;
+        border-bottom: 1px solid #f3f4f6;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }}
+      .title {{
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.2;
+        margin: 0;
+      }}
+      .subtitle {{
+        margin: 6px 0 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }}
+      .content {{
+        padding: 20px;
+      }}
+      .stat {{
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: #fafafa;
+      }}
+      .icon {{
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: #eef2ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--indigo);
+        font-weight: 800;
+      }}
+      .statLabel {{
+        font-size: 12px;
+        color: var(--muted);
+        margin: 0;
+      }}
+      .statValue {{
+        font-size: 22px;
+        font-weight: 900;
+        margin: 2px 0 0 0;
+      }}
+      .sectionTitle {{
+        margin: 18px 0 10px 0;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        font-weight: 800;
+      }}
+      table {{
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+        background: white;
+      }}
+      thead th {{
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        background: #fbfbfb;
+      }}
+      .td {{
+        padding: 14px 16px;
+        border-bottom: 1px solid #f3f4f6;
+        font-size: 14px;
+      }}
+      tbody tr:last-child .td {{
+        border-bottom: none;
+      }}
+      .chunks {{
+        text-align: right;
+        width: 90px;
+        white-space: nowrap;
+      }}
+      .footer {{
+        padding: 16px 20px;
+        border-top: 1px solid #f3f4f6;
+        background: #f9fafb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }}
+      .btn {{
+        border: 1px solid var(--border);
+        background: white;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+      }}
+      .btnDanger {{
+        border-color: #fecaca;
+        color: var(--red);
+        background: #fff;
+      }}
+      .btnPrimary {{
+        border-color: transparent;
+        background: var(--indigo);
+        color: white;
+      }}
+      .links {{
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }}
+      .link {{
+        color: var(--muted);
+        font-size: 12px;
+        text-decoration: none;
+      }}
+      .link:hover {{
+        text-decoration: underline;
+      }}
+      .empty {{
+        padding: 18px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        color: var(--muted);
+        background: #fafafa;
+        text-align: center;
+        font-size: 14px;
+      }}
+      .toast {{
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="modal">
+        <div class="header">
+          <div>
+            <h1 class="title">Course Knowledge Base</h1>
+            <p class="subtitle">Ingested content available for AI</p>
+          </div>
+          <div class="links">
+            <a class="link" href="{json_url}">View JSON</a>
+            <a class="link" href="{home_url}">Back to App</a>
+          </div>
+        </div>
+        <div class="content">
+          <div class="stat">
+            <div class="icon">KB</div>
+            <div>
+              <p class="statLabel">Total Documents</p>
+              <p class="statValue">{document_count} Chunks</p>
+            </div>
+          </div>
+
+          <div class="sectionTitle">Sources</div>
+          {("<table><thead><tr><th>Name</th><th>Type</th><th style='text-align:right;'>Chunks</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>") if len(rows) > 0 else "<div class='empty'>No content found. Try ingesting the course.</div>"}
+          <div id="toast" class="toast"></div>
+        </div>
+        <div class="footer">
+          <button class="btn btnDanger" id="clearBtn">Clear Knowledge Base</button>
+          <div style="display:flex; gap:10px;">
+            <a class="btn" href="{home_url}" style="text-decoration:none; display:inline-flex; align-items:center;">Close</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const clearBtn = document.getElementById("clearBtn");
+      const toast = document.getElementById("toast");
+      const deleteUrl = {html.escape(delete_url)!r};
+      clearBtn.addEventListener("click", async () => {{
+        const ok = window.confirm("Clear all ingested knowledge base content for this course?");
+        if (!ok) return;
+        clearBtn.disabled = true;
+        clearBtn.textContent = "Clearing...";
+        toast.textContent = "";
+        try {{
+          const res = await fetch(deleteUrl, {{ method: "DELETE" }});
+          if (!res.ok) {{
+            const data = await res.json().catch(() => null);
+            const msg = (data && (data.detail || data.message)) ? (data.detail || data.message) : `HTTP ${{
+              res.status
+            }}`;
+            throw new Error(msg);
+          }}
+          toast.textContent = "Knowledge base cleared. Reloading…";
+          window.location.reload();
+        }} catch (e) {{
+          toast.textContent = `Failed to clear knowledge base: ${{
+            (e && e.message) ? e.message : "Unknown error"
+          }}`;
+          clearBtn.disabled = false;
+          clearBtn.textContent = "Clear Knowledge Base";
+        }}
+      }});
+    </script>
+  </body>
+</html>
+        """.strip()
+
+        return html_content
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
