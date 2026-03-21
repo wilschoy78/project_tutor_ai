@@ -960,6 +960,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             <div>
                                 <h3 className="text-xl font-bold text-gray-900">Course Knowledge Base</h3>
                                 <p className="text-sm text-gray-500">Ingested content available for AI</p>
+                                <p className="text-xs text-gray-400 mt-1">Course ID: {kbData?.course_id ?? courseId}</p>
                             </div>
                             <button 
                                 onClick={closeKbModal}

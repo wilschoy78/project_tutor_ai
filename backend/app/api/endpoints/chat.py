@@ -311,6 +311,7 @@ def view_knowledge_base(course_id: int, request: Request):
           <div>
             <h1 class="title">Course Knowledge Base</h1>
             <p class="subtitle">Ingested content available for AI</p>
+            <p class="subtitle" style="margin-top:4px; font-size:12px;">Course ID: {course_id}</p>
           </div>
           <div class="links">
             <a class="link" href="{json_url}">View JSON</a>
