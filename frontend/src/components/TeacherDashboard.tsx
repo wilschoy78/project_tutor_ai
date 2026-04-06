@@ -71,7 +71,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [fullScreenUrl, setFullScreenUrl] = useState<string | null>(null);
     const [isEmbedded, setIsEmbedded] = useState(false);
     const [isSmallScreen, setIsSmallScreen] = useState(false);
-    const [teacherModeDetailsOpen, setTeacherModeDetailsOpen] = useState(true);
+    const [teacherModeDetailsOpen, setTeacherModeDetailsOpen] = useState(false);
     const teacherModeDetailsTouchedRef = React.useRef(false);
     const headerNavRowRef = React.useRef<HTMLDivElement | null>(null);
     const headerActionsRowRef = React.useRef<HTMLDivElement | null>(null);
@@ -194,7 +194,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
 
     useEffect(() => {
         if (teacherModeDetailsTouchedRef.current) return;
-        setTeacherModeDetailsOpen(!isEmbedded);
+        setTeacherModeDetailsOpen(false);
     }, [isEmbedded]);
 
     useEffect(() => {
@@ -787,20 +787,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     Features: Sync Class Analytics • View Knowledge Base • Refresh Content • Pending Quizzes review • Preview student view • View/Pin Learning Paths
                                 </div>
                             </details>
-                            <div className="mt-1">
-                                <div className="inline-flex items-center gap-2 text-xs text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full max-w-[90vw] sm:max-w-[520px]">
-                                    <BookOpen className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                                    <span className="truncate">
-                                        {(() => {
-                                            const course = courses.find(c => c.id === courseId);
-                                            if (!course) return `Course ${courseId} (ID: ${courseId})`;
-                                            const left = course.shortname ? course.shortname : `Course ${course.id}`;
-                                            const right = course.fullname ? course.fullname : "";
-                                            return right ? `${left} — ${right} (ID: ${course.id})` : `${left} (ID: ${course.id})`;
-                                        })()}
-                                    </span>
-                                </div>
-                            </div>
                             <div className="mt-1 text-xs text-gray-500">
                                 {isKbCoverageLoading ? (
                                     <span>Knowledge Base: checking coverage…</span>

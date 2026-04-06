@@ -825,14 +825,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
     return `${base}/moodle/activity-link?course_id=${encodeURIComponent(String(courseId))}&cmid=${encodeURIComponent(String(cmid))}`;
   };
 
-  const activeCourseLabel = (() => {
-    const c = courses.find(x => x.id === activeCourseId);
-    if (!c) return `Course ${activeCourseId}`;
-    const left = c.shortname ? c.shortname : `Course ${c.id}`;
-    const right = c.fullname ? c.fullname : "";
-    return right ? `${left} — ${right}` : left;
-  })();
-
   const handleIngest = async () => {
     try {
       setIsLoading(true);
@@ -1134,7 +1126,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             <div className="mt-1">
               <div className="inline-flex items-center gap-2 text-xs text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full max-w-[90vw] sm:max-w-[520px]">
                 <BrainCircuit className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                <span className="truncate">{activeCourseLabel} (ID: {activeCourseId})</span>
+                <span className="truncate">Course ID: {activeCourseId}</span>
                 <span className="text-gray-400 flex-shrink-0">•</span>
                 <span className="text-gray-600 flex-shrink-0">Student {activeStudentId}</span>
               </div>
