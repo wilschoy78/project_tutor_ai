@@ -35,3 +35,8 @@ moodle_moodledata/
 # Personal Notes
 files/MY_NOTES.md
 files/API_KEYS.md
+
+# Local draft docs (not for repo)
+PROJECT_PROGRESS_*.md
+files/ACM_PAPER*.md
+usability_testing/
