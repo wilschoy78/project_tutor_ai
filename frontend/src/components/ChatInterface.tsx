@@ -12,6 +12,7 @@ interface Message {
   quiz?: QuizResponse;
   quizTopic?: string;
   quizPreview?: boolean;
+  quizNote?: string;
   learningPath?: {
     title: string;
     summary?: string[];
@@ -488,6 +489,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                   const [prefix, jsonPart] = m.content.split(marker);
                   const text = (prefix || "").trim() || "I've generated a practice quiz for you.";
                   let quiz: QuizResponse | null = null;
+                  let quizOrigin: QuizResponse["origin"] | undefined = undefined;
+                  let quizRequestedTopic: string | undefined = undefined;
                   try {
                     const parsed = JSON.parse(jsonPart || "") as Partial<QuizResponse> & { options?: unknown };
                     if (
@@ -496,12 +499,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                       Array.isArray(parsed.options) &&
                       typeof parsed.correct_answer === "string"
                     ) {
+                      quizOrigin = parsed.origin as QuizResponse["origin"] | undefined;
+                      quizRequestedTopic = typeof parsed.requested_topic === "string" ? parsed.requested_topic : undefined;
                       quiz = {
                         question: parsed.question,
                         options: parsed.options.map((o) => String(o)),
                         correct_answer: parsed.correct_answer,
                         explanation: typeof parsed.explanation === "string" ? parsed.explanation : "",
                         hint: typeof parsed.hint === "string" ? parsed.hint : undefined,
+                        origin: quizOrigin,
+                        requested_topic: quizRequestedTopic,
+                        matched_topic: typeof parsed.matched_topic === "string" ? parsed.matched_topic : null,
                       };
                     }
                   } catch {
@@ -512,12 +520,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                   const quizTopic = topicMatch ? topicMatch[1].trim() : undefined;
 
                   if (quiz) {
+                    const requested = quiz.requested_topic || quizTopic;
+                    const quizNote =
+                      quiz.origin === "rag" && requested && requested.toLowerCase() !== "general course review"
+                        ? `No teacher-approved quiz matched “${requested}”, so this practice quiz was generated from your course materials.`
+                        : undefined;
                     return {
                       id: String(m.id),
                       role: 'assistant',
                       content: text,
                       quiz,
                       quizTopic,
+                      quizNote,
                       context: { courseId: activeCourseId, studentId: activeStudentId },
                     } as Message;
                   }
@@ -539,11 +553,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                 if (parsed && typeof parsed === 'object') {
                   const obj = parsed as Record<string, unknown>;
                   if (obj.type === 'quiz' && obj.quiz) {
+                  const quizObj = obj.quiz as QuizResponse;
+                  const requested = typeof obj.topic === "string" ? obj.topic : quizObj.requested_topic;
+                  const quizNote =
+                    quizObj && quizObj.origin === "rag" && requested && requested.toLowerCase() !== "general course review"
+                      ? `No teacher-approved quiz matched “${requested}”, so this practice quiz was generated from your course materials.`
+                      : undefined;
                   return {
                     id: String(m.id),
                     role: 'assistant',
                     content: 'Here is a practice question based on your course content:',
-                    quiz: obj.quiz as QuizResponse,
+                    quiz: quizObj,
+                    quizTopic: typeof obj.topic === "string" ? obj.topic : undefined,
+                    quizNote,
                     context: { courseId: activeCourseId, studentId: activeStudentId },
                   } as Message;
                   }
@@ -898,6 +920,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
       }]);
       
       const quiz = await chatApi.generateQuiz(activeCourseId, topic, activeStudentId);
+      const quizNote =
+        quiz?.origin === "rag" && topic.toLowerCase() !== "general course review"
+          ? `No teacher-approved quiz matched “${topic}”, so this practice quiz was generated from your course materials.`
+          : undefined;
       
       setMessages(prev => {
         // Replace the "Generating..." message or append new one
@@ -912,6 +938,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             content: "Here is a practice question based on your course content:",
             quiz: quiz,
             quizTopic: topic,
+            quizNote,
             context: {
                 courseId: activeCourseId,
                 studentId: activeStudentId
@@ -1107,13 +1134,27 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         if (typeof obj.question !== "string") return null;
         if (!Array.isArray(obj.options)) return null;
         if (typeof obj.correct_answer !== "string") return null;
+        const origin = typeof obj.origin === "string" ? (obj.origin as QuizResponse["origin"]) : undefined;
+        const requested_topic = typeof obj.requested_topic === "string" ? obj.requested_topic : undefined;
+        const matched_topic = typeof obj.matched_topic === "string" ? obj.matched_topic : null;
         return {
           question: obj.question,
           options: obj.options.map((o) => String(o)),
           correct_answer: obj.correct_answer,
           explanation: typeof obj.explanation === "string" ? obj.explanation : "",
           hint: typeof obj.hint === "string" ? obj.hint : undefined,
+          origin,
+          requested_topic,
+          matched_topic,
         };
+      };
+
+      const getTopicMismatchNote = (quiz: QuizResponse, fallbackTopic?: string) => {
+        const requested = quiz.requested_topic || fallbackTopic;
+        if (quiz.origin !== "rag") return undefined;
+        if (!requested) return undefined;
+        if (requested.toLowerCase() === "general course review") return undefined;
+        return `No teacher-approved quiz matched “${requested}”, so this practice quiz was generated from your course materials.`;
       };
 
       const tryStructuredAnswer = (): { text: string; quiz: QuizResponse; topic?: string } | null => {
@@ -1127,7 +1168,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         if (!parsed || typeof parsed !== "object") return null;
         const obj = parsed as Record<string, unknown>;
         if (obj.type === "quiz" && obj.quiz) {
-          const quiz = normalizeQuiz(obj.quiz);
+          const rawQuiz = obj.quiz as Record<string, unknown>;
+          const quiz = normalizeQuiz(rawQuiz);
           if (!quiz) return null;
           const topic = typeof obj.topic === "string" ? obj.topic : undefined;
           const text =
@@ -1147,12 +1189,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
 
       const structured = tryStructuredAnswer();
       if (structured) {
+        const quizNote = getTopicMismatchNote(structured.quiz, structured.topic);
         botMessage = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
           content: structured.text,
           quiz: structured.quiz,
           quizTopic: structured.topic,
+          quizNote,
           context: { courseId: activeCourseId, studentId: activeStudentId },
         };
       } else if (typeof response.answer === "string" && response.answer.includes(marker)) {
@@ -1168,12 +1212,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
           const text = (prefix || "").trim() || "I've generated a quiz for you.";
           const topicMatch = text.match(/quiz\s+for\s+you\s+(?:on|about)\s+(.+?)(?:\.)?$/i);
           const quizTopic = topicMatch ? topicMatch[1].trim() : undefined;
+          const quizNote = getTopicMismatchNote(quiz, quizTopic);
           botMessage = {
             id: (Date.now() + 1).toString(),
             role: "assistant",
             content: text,
             quiz,
             quizTopic,
+            quizNote,
             context: { courseId: activeCourseId, studentId: activeStudentId },
           };
         } else {
@@ -1653,7 +1699,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                   onPracticeAgain={msg.quizPreview ? undefined : (topic) => handleGenerateQuiz(topic)}
                   practiceTopic={msg.quizPreview ? undefined : msg.quizTopic}
                   isBusy={isLoading || isSyncing}
-                  previewNote={msg.quizPreview ? "Preview mode: answers are not saved." : undefined}
+                  previewNote={msg.quizPreview ? "Preview mode: answers are not saved." : msg.quizNote}
                 />
               )}
 

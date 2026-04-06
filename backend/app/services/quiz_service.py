@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import uuid
 from typing import List, Dict, Any, Optional
@@ -33,31 +34,71 @@ class QuizService:
         """
         Generates quizzes using RAG and saves them as pending.
         """
-        new_quizzes = []
-        for _ in range(count):
-            # Generate using RAG
-            quiz_data = rag_service.generate_quiz(course_id, topic)
-            
-            # Add metadata
-            quiz_record = {
-                "id": str(uuid.uuid4()),
-                "course_id": course_id,
-                "topic": topic,
-                "question": quiz_data.get("question", ""),
-                "options": quiz_data.get("options", []),
-                "correct_answer": quiz_data.get("correct_answer", ""),
-                "explanation": quiz_data.get("explanation", ""),
-                "hint": quiz_data.get("hint", ""),
-                "status": "pending",  # pending, approved, rejected
-                "created_at": time.time(),
-                "source": "ai_generated"
-            }
-            new_quizzes.append(quiz_record)
-        
-        # Save to file
+        def _key(q: Dict[str, Any]) -> str:
+            question = str(q.get("question") or "").strip().lower()
+            options = q.get("options") or []
+            if not isinstance(options, list):
+                options = []
+            opts = "||".join([str(o).strip().lower() for o in options])
+            return f"{question}::{opts}"
+
+        def _near_duplicate(a: str, b: str) -> bool:
+            def toks(s: str) -> set:
+                parts = re.split(r"[^a-z0-9]+", (s or "").lower())
+                return {p for p in parts if len(p) >= 3}
+            ta = toks(a)
+            tb = toks(b)
+            if not ta or not tb:
+                return False
+            inter = len(ta & tb)
+            union = len(ta | tb)
+            score = inter / union if union else 0.0
+            return score >= 0.82
+
         current_quizzes = self._load_quizzes(course_id)
-        current_quizzes.extend(new_quizzes)
-        self._save_quizzes(course_id, current_quizzes)
+        existing_keys = {_key(q) for q in current_quizzes}
+        existing_questions = [q.get("question", "") for q in current_quizzes if q.get("question")]
+
+        new_quizzes: List[Dict[str, Any]] = []
+        attempts_per_item = 4
+        for idx in range(count):
+            created: Optional[Dict[str, Any]] = None
+            for attempt in range(attempts_per_item):
+                token = f"{idx + 1}/{count}:{attempt + 1}:{uuid.uuid4()}"
+                avoid = [q.get("question", "") for q in new_quizzes if q.get("question")]
+                quiz_data = rag_service.generate_quiz(course_id, topic, diversity_token=token, avoid_questions=avoid)
+            
+                quiz_record = {
+                    "id": str(uuid.uuid4()),
+                    "course_id": course_id,
+                    "topic": topic,
+                    "question": quiz_data.get("question", ""),
+                    "options": quiz_data.get("options", []),
+                    "correct_answer": quiz_data.get("correct_answer", ""),
+                    "explanation": quiz_data.get("explanation", ""),
+                    "hint": quiz_data.get("hint", ""),
+                    "status": "pending",
+                    "created_at": time.time(),
+                    "source": "ai_generated"
+                }
+                k = _key(quiz_record)
+                if k in existing_keys:
+                    continue
+                if any(_near_duplicate(quiz_record.get("question", ""), q.get("question", "")) for q in new_quizzes):
+                    continue
+                if any(_near_duplicate(quiz_record.get("question", ""), q) for q in existing_questions):
+                    continue
+                existing_keys.add(k)
+                created = quiz_record
+                break
+
+            if created is None:
+                continue
+            new_quizzes.append(created)
+        
+        if new_quizzes:
+            current_quizzes.extend(new_quizzes)
+            self._save_quizzes(course_id, current_quizzes)
         
         return new_quizzes
 
@@ -94,14 +135,24 @@ class QuizService:
         # For simplicity, we filter by topic substring or just pick a random approved one if topic is "General"
         approved = self.get_quizzes(course_id, status="approved")
         
-        candidates = []
-        for q in approved:
-            # Simple topic matching
-            if topic.lower() in q.get("topic", "").lower() or q.get("topic", "").lower() in topic.lower():
-                candidates.append(q)
-        
-        if not candidates and topic.lower() in ["general", "general course review"]:
+        def _norm_topic(t: Any) -> str:
+            s = str(t or "").strip().lower()
+            s = " ".join(s.split())
+            return s
+
+        requested = _norm_topic(topic)
+        is_general = requested in {"", "general", "general review", "general course review", "review"}
+
+        candidates: List[Dict[str, Any]] = []
+        if is_general:
             candidates = approved
+        else:
+            for q in approved:
+                qt = _norm_topic(q.get("topic"))
+                if not qt:
+                    continue
+                if requested in qt or qt in requested:
+                    candidates.append(q)
 
         if candidates:
             import random
@@ -111,11 +162,19 @@ class QuizService:
                 "options": selected["options"],
                 "correct_answer": selected["correct_answer"],
                 "explanation": selected["explanation"],
-                "hint": selected["hint"]
+                "hint": selected["hint"],
+                "origin": "approved",
+                "requested_topic": topic,
+                "matched_topic": selected.get("topic"),
             }
             
         # 2. Fallback: Generate on the fly
         print(f"No approved quiz found for topic '{topic}', generating on the fly...")
-        return rag_service.generate_quiz(course_id, topic)
+        quiz = rag_service.generate_quiz(course_id, topic, diversity_token=str(uuid.uuid4()))
+        if isinstance(quiz, dict):
+            quiz["origin"] = "rag"
+            quiz["requested_topic"] = topic
+            quiz["matched_topic"] = None
+        return quiz
 
 quiz_service = QuizService()

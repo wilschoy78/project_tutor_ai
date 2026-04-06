@@ -481,7 +481,13 @@ class RAGService:
 
         return {"answer": result["result"], "sources": sources}
 
-    def generate_quiz(self, course_id: int, topic: str):
+    def generate_quiz(
+        self,
+        course_id: int,
+        topic: str,
+        diversity_token: Optional[str] = None,
+        avoid_questions: Optional[List[str]] = None,
+    ):
         """
         Generates a multiple choice question based on the topic and course content.
         """
@@ -518,6 +524,13 @@ class RAGService:
         # 2. Prompt for Quiz Generation
         template = """
         You are an AI Tutor. Based on the following course content, generate a multiple-choice question to test the student's understanding of "{topic}".
+
+        Diversity token (to avoid duplicates across generations): {diversity_token}
+        Requirements:
+        - The question and options must be meaningfully different from other quizzes about the same topic.
+        - Avoid repeating the same phrasing and distractors.
+        - Do NOT generate a near-duplicate of any question in this list:
+        {avoid_questions}
         
         Course Content:
         {context}
@@ -537,14 +550,22 @@ class RAGService:
         
         prompt = PromptTemplate(
             template=template,
-            input_variables=["topic", "context"]
+            input_variables=["topic", "context", "diversity_token", "avoid_questions"]
         )
         
         chain = prompt | self.llm
         
         # 3. Execute
         quiz_llm = self.llm.bind(temperature=0.2) if hasattr(self.llm, "bind") else self.llm
-        response = (prompt | quiz_llm).invoke({"topic": topic, "context": context_text})
+        avoid_text = "\n".join([f"- {q}" for q in (avoid_questions or [])]) if avoid_questions else "- (none)"
+        response = (prompt | quiz_llm).invoke(
+            {
+                "topic": topic,
+                "context": context_text,
+                "diversity_token": str(diversity_token or ""),
+                "avoid_questions": avoid_text,
+            }
+        )
         
         # 4. Parse JSON
         import json

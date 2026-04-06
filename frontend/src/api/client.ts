@@ -42,6 +42,9 @@ export interface QuizResponse {
   correct_answer: string;
   explanation: string;
   hint?: string;
+  origin?: "approved" | "rag";
+  requested_topic?: string;
+  matched_topic?: string | null;
 }
 
 export const chatApi = {

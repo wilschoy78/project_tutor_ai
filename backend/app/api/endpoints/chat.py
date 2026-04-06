@@ -41,6 +41,9 @@ class QuizResponse(BaseModel):
     correct_answer: str
     explanation: str
     hint: Optional[str] = None
+    origin: Optional[str] = None
+    requested_topic: Optional[str] = None
+    matched_topic: Optional[str] = None
 
 class QuizSubmission(BaseModel):
     course_id: int
