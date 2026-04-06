@@ -1198,7 +1198,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     : `Approved Quizzes (${approvedQuizzes.length})`}
                             </h2>
                             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-900">
-                                <span className="font-semibold">Teacher note:</span> Approved quizzes appear in Student Pop Quiz.
+                                <span className="font-semibold">Teacher note:</span> Pop Quiz generates a fresh question from course materials. Approved quizzes are used when students ask for a quiz on a specific topic (e.g., “give me a quiz about SQL joins”).
                             </div>
                             <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">

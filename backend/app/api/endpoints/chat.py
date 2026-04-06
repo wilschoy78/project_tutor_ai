@@ -533,16 +533,20 @@ def get_chat_history(course_id: int, student_id: int, limit: int = 50):
 def generate_quiz(request: QuizRequest):
     """
     Generate a quiz question based on a topic.
-    Prioritizes approved quizzes from the Quiz Bank.
+    Generates a quiz grounded in course content (RAG).
+    Teacher-approved quiz bank items are served via chat requests like: "give me a quiz about <topic>".
     """
     try:
-        # Generate the quiz first (using quiz_service to leverage bank)
-        # Note: get_student_quiz returns a dict, QuizResponse expects fields
-        # quiz_service.get_student_quiz returns {question, options, correct_answer, explanation, hint}
-        # which matches QuizResponse structure
-        
-        # Check quiz bank first
-        quiz_data = quiz_service.get_student_quiz(request.course_id, request.topic)
+        import uuid
+        quiz_data = rag_service.generate_quiz(
+            request.course_id,
+            request.topic,
+            diversity_token=str(uuid.uuid4()),
+        )
+        if isinstance(quiz_data, dict):
+            quiz_data["origin"] = "rag"
+            quiz_data["requested_topic"] = request.topic
+            quiz_data["matched_topic"] = None
         
         # Save to history so it persists (structured JSON for clean rendering on refresh)
         import json

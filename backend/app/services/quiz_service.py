@@ -144,9 +144,7 @@ class QuizService:
         is_general = requested in {"", "general", "general review", "general course review", "review"}
 
         candidates: List[Dict[str, Any]] = []
-        if is_general:
-            candidates = approved
-        else:
+        if not is_general:
             for q in approved:
                 qt = _norm_topic(q.get("topic"))
                 if not qt:
