@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw, MessageSquareText, Link as LinkIcon, FileText, ClipboardList, HelpCircle, Database, Maximize2 } from 'lucide-react';
+import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw, MessageSquareText, Link as LinkIcon, FileText, ClipboardList, HelpCircle, Database, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
 import { actionButtonClass, cn } from '../lib/utils';
 
@@ -443,6 +443,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
   const syncRequestIdRef = useRef(0);
   const timedOutSyncRequestIdsRef = useRef<Set<number>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const actionBarRef = useRef<HTMLDivElement>(null);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const [sourcesOpen, setSourcesOpen] = useState<Record<string, boolean>>({});
   const [isSmallScreen, setIsSmallScreen] = useState(false);
@@ -453,6 +454,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
   const [isEmbedded, setIsEmbedded] = useState(false);
   const [startHereOpen, setStartHereOpen] = useState(false);
   const startHereTouchedRef = useRef(false);
+  const [actionBarCanScrollLeft, setActionBarCanScrollLeft] = useState(false);
+  const [actionBarCanScrollRight, setActionBarCanScrollRight] = useState(false);
 
   useEffect(() => {
     if (initialCourseId) setActiveCourseId(initialCourseId);
@@ -685,9 +688,37 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
   }, []);
 
   useEffect(() => {
+    updateActionBarScrollState();
+    const onResize = () => updateActionBarScrollState();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isEmbedded, isSmallScreen, isSyncing, syncProgressPercent, startHereOpen]);
+
+  useEffect(() => {
     if (startHereTouchedRef.current) return;
     setStartHereOpen(false);
   }, [isEmbedded, isSmallScreen]);
+
+  const toggleStartHere = () => {
+    startHereTouchedRef.current = true;
+    setStartHereOpen((v) => !v);
+  };
+
+  const updateActionBarScrollState = () => {
+    const el = actionBarRef.current;
+    if (!el) return;
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const left = el.scrollLeft;
+    setActionBarCanScrollLeft(left > 2);
+    setActionBarCanScrollRight(left < maxScrollLeft - 2);
+  };
+
+  const scrollActionBarBy = (delta: number) => {
+    const el = actionBarRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: "smooth" });
+    window.setTimeout(updateActionBarScrollState, 60);
+  };
 
   useEffect(() => {
     const key = `aiTutor:teacherAnalyticsUpdatedAt:${activeCourseId}`;
@@ -1157,6 +1188,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             >
               <HelpCircle className="w-4 h-4" />
             </button>
+            {(isEmbedded || isSmallScreen) && (
+              <button
+                type="button"
+                onClick={toggleStartHere}
+                className="text-sm font-semibold text-blue-700 underline underline-offset-2"
+                title="Show quick tips and what the buttons do"
+              >
+                Start here
+              </button>
+            )}
             {(isEmbedded || isSmallScreen) && fullScreenUrl && (
               <a
                 href={fullScreenUrl}
@@ -1182,47 +1223,36 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             )}
             </div>
 
-            <details
-              open={startHereOpen}
-              onToggle={(e) => {
-                startHereTouchedRef.current = true;
-                setStartHereOpen((e.currentTarget as HTMLDetailsElement).open);
-              }}
-              className="w-full text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
-            >
-              <summary className="cursor-pointer select-none">
+            {((!isEmbedded && !isSmallScreen) || startHereOpen) && (
+              <div className="w-full text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-semibold text-gray-700">Start here</span>
-                  <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
-                    {startHereOpen ? "Hide" : "Show"}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isEmbedded || isSmallScreen) toggleStartHere();
+                      else setIsStudentHelpOpen(v => !v);
+                    }}
+                    className="text-xs font-semibold text-blue-700 underline underline-offset-2"
+                  >
+                    {isEmbedded || isSmallScreen ? "Hide" : (isStudentHelpOpen ? "Hide help" : "What do these do?")}
+                  </button>
                 </div>
-                {!startHereOpen && (isEmbedded || isSmallScreen) && (
+                {(isEmbedded || isSmallScreen) && (
                   <div className="mt-1 text-[11px] text-gray-500">
                     Tip: use Full screen for the best experience in Moodle blocks.
                   </div>
                 )}
-              </summary>
-              <div className="mt-2">
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsStudentHelpOpen(v => !v)}
-                    className="text-xs font-semibold text-blue-700 underline underline-offset-2"
-                  >
-                    {isStudentHelpOpen ? "Hide help" : "What do these do?"}
-                  </button>
-                </div>
-                <div className="mt-1">
+                <div className="mt-2">
                   Refresh Content (if materials changed), then ask your question.
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-[11px] text-gray-500">
                   Note: Knowledge Base is managed by the instructor.
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-[11px] text-gray-500">
                   Teacher-approved quizzes are practice unless graded integration is enabled.
                 </div>
-                {isStudentHelpOpen && (
+                {(!isEmbedded && !isSmallScreen) && isStudentHelpOpen && (
                   <div className="mt-2 space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
                       <div className="flex items-start gap-2">
@@ -1263,9 +1293,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                   </div>
                 )}
               </div>
-            </details>
+            )}
 
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 w-full">
+            <div className="relative w-full">
+              {(isEmbedded || isSmallScreen) && actionBarCanScrollLeft && (
+                <button
+                  type="button"
+                  onClick={() => scrollActionBarBy(-260)}
+                  className="absolute left-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-700"
+                  title="Scroll left"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              )}
+              {(isEmbedded || isSmallScreen) && actionBarCanScrollRight && (
+                <button
+                  type="button"
+                  onClick={() => scrollActionBarBy(260)}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-700"
+                  title="Scroll right"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              )}
+              <div
+                ref={actionBarRef}
+                onScroll={updateActionBarScrollState}
+                className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 w-full scroll-smooth"
+                style={{ paddingLeft: (isEmbedded || isSmallScreen) ? 44 : undefined, paddingRight: (isEmbedded || isSmallScreen) ? 44 : undefined }}
+              >
             <button 
                 onClick={handleGetLearningPath}
                 disabled={isLoading || isSyncing}
@@ -1303,6 +1359,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                 Refresh Content
             </button>
             </div>
+            </div>
             {isSyncing && syncProgressPercent !== null && (
               <div className="w-full">
                 <div className="flex items-center justify-between text-[11px] text-gray-500">
@@ -1318,22 +1375,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
               </div>
             )}
             {(isEmbedded || isSmallScreen) ? (
-              <details className="w-full text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                <summary className="cursor-pointer select-none font-semibold text-gray-700">
-                  Sync & practice notes
-                  <span className="ml-2 text-blue-700 underline underline-offset-2">
-                    Show
-                  </span>
-                </summary>
-                <div className="mt-2 space-y-2">
-                  <div>
-                    Step guide: 1) Refresh Content (when course materials change) 2) Sync (after you complete quizzes/activities). Sync updates completion and quiz progress (not grades unless enabled). If a teacher is reviewing class analytics, ask them to run Sync Class Analytics after you sync.
-                  </div>
-                  <div className="text-[11px] text-gray-500">
-                    Synced: quiz scores, completion progress
-                  </div>
-                </div>
-              </details>
+              <div className="w-full text-[11px] text-gray-500">
+                Synced: quiz scores, completion progress
+              </div>
             ) : (
               <>
                 <p className="w-full text-xs text-gray-500">

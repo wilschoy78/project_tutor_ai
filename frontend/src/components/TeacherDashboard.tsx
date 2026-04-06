@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion, HelpCircle, Maximize2 } from 'lucide-react';
+import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion, HelpCircle, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
     api,
     dashboardApi,
@@ -70,8 +70,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [moodleReturnUrl, setMoodleReturnUrl] = useState<string | null>(null);
     const [fullScreenUrl, setFullScreenUrl] = useState<string | null>(null);
     const [isEmbedded, setIsEmbedded] = useState(false);
+    const [isSmallScreen, setIsSmallScreen] = useState(false);
     const [teacherModeDetailsOpen, setTeacherModeDetailsOpen] = useState(true);
     const teacherModeDetailsTouchedRef = React.useRef(false);
+    const headerNavRowRef = React.useRef<HTMLDivElement | null>(null);
+    const headerActionsRowRef = React.useRef<HTMLDivElement | null>(null);
+    const [navCanScrollLeft, setNavCanScrollLeft] = useState(false);
+    const [navCanScrollRight, setNavCanScrollRight] = useState(false);
+    const [actionsCanScrollLeft, setActionsCanScrollLeft] = useState(false);
+    const [actionsCanScrollRight, setActionsCanScrollRight] = useState(false);
     const syncProgressIntervalRef = React.useRef<number | null>(null);
     const syncTimeoutRef = React.useRef<number | null>(null);
     const syncRequestIdRef = React.useRef(0);
@@ -174,6 +181,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         } catch {
             setFullScreenUrl(null);
         }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const mq = window.matchMedia("(max-width: 639px)");
+        const update = () => setIsSmallScreen(mq.matches);
+        update();
+        mq.addEventListener("change", update);
+        return () => mq.removeEventListener("change", update);
     }, []);
 
     useEffect(() => {
@@ -285,6 +301,36 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         if (!cmid) return null;
         return `${base}/moodle/activity-link?course_id=${encodeURIComponent(String(courseId))}&cmid=${encodeURIComponent(String(cmid))}`;
     };
+
+    const updateHeaderRowScrollState = useCallback(() => {
+        const update = (
+            el: HTMLDivElement | null,
+            setLeft: (v: boolean) => void,
+            setRight: (v: boolean) => void
+        ) => {
+            if (!el) return;
+            const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+            const left = el.scrollLeft;
+            setLeft(left > 2);
+            setRight(left < maxScrollLeft - 2);
+        };
+        update(headerNavRowRef.current, setNavCanScrollLeft, setNavCanScrollRight);
+        update(headerActionsRowRef.current, setActionsCanScrollLeft, setActionsCanScrollRight);
+    }, []);
+
+    const scrollHeaderRowBy = useCallback((row: "nav" | "actions", delta: number) => {
+        const el = row === "nav" ? headerNavRowRef.current : headerActionsRowRef.current;
+        if (!el) return;
+        el.scrollBy({ left: delta, behavior: "smooth" });
+        window.setTimeout(() => updateHeaderRowScrollState(), 60);
+    }, [updateHeaderRowScrollState]);
+
+    useEffect(() => {
+        updateHeaderRowScrollState();
+        const onResize = () => updateHeaderRowScrollState();
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, [updateHeaderRowScrollState, isEmbedded, isSmallScreen, isSyncing, syncProgressPercent, isSyncHelpOpen, teacherModeDetailsOpen]);
 
     const downloadKbCsv = () => {
         if (!kbData) return;
@@ -772,7 +818,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                     </div>
                     
                     <div className="flex flex-col gap-2 sm:items-end">
-                      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:justify-end sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0">
+                      <div className="relative w-full sm:w-auto">
+                        {(isEmbedded || isSmallScreen) && navCanScrollLeft && (
+                          <button
+                            type="button"
+                            onClick={() => scrollHeaderRowBy("nav", -260)}
+                            className="absolute left-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-700"
+                            title="Scroll left"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                        )}
+                        {(isEmbedded || isSmallScreen) && navCanScrollRight && (
+                          <button
+                            type="button"
+                            onClick={() => scrollHeaderRowBy("nav", 260)}
+                            className="absolute right-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-700"
+                            title="Scroll right"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        )}
+                        <div
+                          ref={headerNavRowRef}
+                          onScroll={updateHeaderRowScrollState}
+                          className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:justify-end sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0 scroll-smooth"
+                          style={{ paddingLeft: (isEmbedded || isSmallScreen) ? 44 : undefined, paddingRight: (isEmbedded || isSmallScreen) ? 44 : undefined }}
+                        >
                         <button
                             type="button"
                             onClick={() => setIsSyncHelpOpen(v => !v)}
@@ -804,9 +876,36 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                 Back to Moodle
                             </a>
                         )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:justify-end sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0">
+                      <div className="relative w-full sm:w-auto">
+                        {(isEmbedded || isSmallScreen) && actionsCanScrollLeft && (
+                          <button
+                            type="button"
+                            onClick={() => scrollHeaderRowBy("actions", -260)}
+                            className="absolute left-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-700"
+                            title="Scroll left"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                        )}
+                        {(isEmbedded || isSmallScreen) && actionsCanScrollRight && (
+                          <button
+                            type="button"
+                            onClick={() => scrollHeaderRowBy("actions", 260)}
+                            className="absolute right-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-700"
+                            title="Scroll right"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        )}
+                        <div
+                          ref={headerActionsRowRef}
+                          onScroll={updateHeaderRowScrollState}
+                          className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:justify-end sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0 scroll-smooth"
+                          style={{ paddingLeft: (isEmbedded || isSmallScreen) ? 44 : undefined, paddingRight: (isEmbedded || isSmallScreen) ? 44 : undefined }}
+                        >
                         <button
                             onClick={handleSync}
                             disabled={isSyncing}
@@ -839,6 +938,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             )}
                             {isIngesting ? 'Refreshing…' : 'Refresh Content'}
                         </button>
+                        </div>
                       </div>
                         {isSyncing && syncProgressPercent !== null && (
                             <div className="w-full">
