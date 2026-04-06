@@ -483,6 +483,52 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
         if (history.length > 0) {
           const baseMessages = history.map((m) => {
               if (m.role === 'assistant') {
+                const marker = ":::JSON_QUIZ:::";
+                if (typeof m.content === "string" && m.content.includes(marker)) {
+                  const [prefix, jsonPart] = m.content.split(marker);
+                  const text = (prefix || "").trim() || "I've generated a practice quiz for you.";
+                  let quiz: QuizResponse | null = null;
+                  try {
+                    const parsed = JSON.parse(jsonPart || "") as Partial<QuizResponse> & { options?: unknown };
+                    if (
+                      parsed &&
+                      typeof parsed.question === "string" &&
+                      Array.isArray(parsed.options) &&
+                      typeof parsed.correct_answer === "string"
+                    ) {
+                      quiz = {
+                        question: parsed.question,
+                        options: parsed.options.map((o) => String(o)),
+                        correct_answer: parsed.correct_answer,
+                        explanation: typeof parsed.explanation === "string" ? parsed.explanation : "",
+                        hint: typeof parsed.hint === "string" ? parsed.hint : undefined,
+                      };
+                    }
+                  } catch {
+                    quiz = null;
+                  }
+
+                  const topicMatch = text.match(/quiz\s+for\s+you\s+(?:on|about)\s+(.+)$/i);
+                  const quizTopic = topicMatch ? topicMatch[1].trim() : undefined;
+
+                  if (quiz) {
+                    return {
+                      id: String(m.id),
+                      role: 'assistant',
+                      content: text,
+                      quiz,
+                      quizTopic,
+                      context: { courseId: activeCourseId, studentId: activeStudentId },
+                    } as Message;
+                  }
+
+                  return {
+                    id: String(m.id),
+                    role: 'assistant',
+                    content: text,
+                  } as Message;
+                }
+
                 let parsed: unknown = null;
                 try {
                   parsed = JSON.parse(m.content);
@@ -1053,41 +1099,101 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
       console.log('API Response:', response);
       
       let botMessage: Message;
-      
-      // Check for embedded quiz JSON
-      if (response.answer.includes(":::JSON_QUIZ:::")) {
-          const [text, jsonPart] = response.answer.split(":::JSON_QUIZ:::");
+
+      const marker = ":::JSON_QUIZ:::";
+      const normalizeQuiz = (raw: unknown): QuizResponse | null => {
+        if (!raw || typeof raw !== "object") return null;
+        const obj = raw as Record<string, unknown>;
+        if (typeof obj.question !== "string") return null;
+        if (!Array.isArray(obj.options)) return null;
+        if (typeof obj.correct_answer !== "string") return null;
+        return {
+          question: obj.question,
+          options: obj.options.map((o) => String(o)),
+          correct_answer: obj.correct_answer,
+          explanation: typeof obj.explanation === "string" ? obj.explanation : "",
+          hint: typeof obj.hint === "string" ? obj.hint : undefined,
+        };
+      };
+
+      const tryStructuredAnswer = (): { text: string; quiz: QuizResponse; topic?: string } | null => {
+        if (typeof response.answer !== "string") return null;
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(response.answer);
+        } catch {
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== "object") return null;
+        const obj = parsed as Record<string, unknown>;
+        if (obj.type === "quiz" && obj.quiz) {
+          const quiz = normalizeQuiz(obj.quiz);
+          if (!quiz) return null;
+          const topic = typeof obj.topic === "string" ? obj.topic : undefined;
+          const text =
+            typeof obj.text === "string"
+              ? obj.text
+              : topic
+                ? `I've generated a quiz for you on ${topic}.`
+                : "I've generated a quiz for you.";
+          return { text, quiz, topic };
+        }
+        const directQuiz = normalizeQuiz(obj);
+        if (directQuiz) {
+          return { text: "Here is a practice question based on your course content:", quiz: directQuiz };
+        }
+        return null;
+      };
+
+      const structured = tryStructuredAnswer();
+      if (structured) {
+        botMessage = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: structured.text,
+          quiz: structured.quiz,
+          quizTopic: structured.topic,
+          context: { courseId: activeCourseId, studentId: activeStudentId },
+        };
+      } else if (typeof response.answer === "string" && response.answer.includes(marker)) {
+        const [prefix, jsonPart] = response.answer.split(marker);
+        const quiz = normalizeQuiz((() => {
           try {
-              const quizData = JSON.parse(jsonPart);
-              botMessage = {
-                  id: (Date.now() + 1).toString(),
-                  role: 'assistant',
-                  content: text,
-                  quiz: quizData,
-                  context: {
-                      courseId: activeCourseId,
-                      studentId: activeStudentId
-                  }
-              };
+            return JSON.parse(jsonPart || "");
           } catch {
-              // Fallback if JSON parse fails
-              botMessage = {
-                  id: (Date.now() + 1).toString(),
-                  role: 'assistant',
-                  content: response.answer.replace(":::JSON_QUIZ:::", ""),
-                  sources: response.sources
-              };
+            return null;
           }
-      } else {
-          const hasSources = Array.isArray(response.sources) && response.sources.length > 0;
+        })());
+        if (quiz) {
+          const text = (prefix || "").trim() || "I've generated a quiz for you.";
+          const topicMatch = text.match(/quiz\s+for\s+you\s+(?:on|about)\s+(.+?)(?:\.)?$/i);
+          const quizTopic = topicMatch ? topicMatch[1].trim() : undefined;
           botMessage = {
             id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: hasSources
-              ? response.answer
-              : "I can’t find relevant information for this question in your current course materials. Try Refresh Content, ask your teacher to ingest/update the course, or rephrase using the exact lesson/topic name from Moodle.",
+            role: "assistant",
+            content: text,
+            quiz,
+            quizTopic,
+            context: { courseId: activeCourseId, studentId: activeStudentId },
+          };
+        } else {
+          botMessage = {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: response.answer.replace(marker, ""),
             sources: response.sources,
           };
+        }
+      } else {
+        const hasSources = Array.isArray(response.sources) && response.sources.length > 0;
+        botMessage = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: hasSources
+            ? response.answer
+            : "I can’t find relevant information for this question in your current course materials. Try Refresh Content, ask your teacher to ingest/update the course, or rephrase using the exact lesson/topic name from Moodle.",
+          sources: response.sources,
+        };
       }
 
       setMessages(prev => [...prev, botMessage]);

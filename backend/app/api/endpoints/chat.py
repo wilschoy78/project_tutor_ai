@@ -477,9 +477,16 @@ def chat(request: ChatRequest):
             # The frontend checks if the message contains a 'quiz' property usually, but for /chat endpoint it returns ChatResponse { answer, sources }
             # So we need to encode it in the answer in a way the frontend can parse, OR rely on the frontend parsing "I've generated a quiz..."
             
-            # Let's return a special marker that the frontend can detect to render the card
+            # Return a special marker for immediate rendering, but store structured JSON in history
             import json
             quiz_json = json.dumps(quiz_data)
+            history_payload = json.dumps(
+                {
+                    "type": "quiz",
+                    "topic": topic,
+                    "quiz": quiz_data,
+                }
+            )
             
             # We save the interaction to history with the quiz marker
             # The frontend's history loader might already handle this if we save it correctly
@@ -493,8 +500,8 @@ def chat(request: ChatRequest):
             # Or better: "I've generated a quiz for you: <QUIZ_JSON>..."
             
             response_text = f"I've generated a quiz for you on {topic}:::JSON_QUIZ:::{quiz_json}"
-            
-            conversation_service.add_message(request.course_id, request.student_id, "assistant", response_text)
+
+            conversation_service.add_message(request.course_id, request.student_id, "assistant", history_payload)
             
             return {
                 "answer": response_text,
@@ -534,9 +541,21 @@ def generate_quiz(request: QuizRequest):
         # Check quiz bank first
         quiz_data = quiz_service.get_student_quiz(request.course_id, request.topic)
         
-        # Save to history so it persists
+        # Save to history so it persists (structured JSON for clean rendering on refresh)
+        import json
         conversation_service.add_message(request.course_id, request.student_id, "user", f"Give me a pop quiz on {request.topic}")
-        conversation_service.add_message(request.course_id, request.student_id, "assistant", f"I've generated a quiz for you: {quiz_data['question']}")
+        conversation_service.add_message(
+            request.course_id,
+            request.student_id,
+            "assistant",
+            json.dumps(
+                {
+                    "type": "quiz",
+                    "topic": request.topic,
+                    "quiz": quiz_data,
+                }
+            ),
+        )
         
         return quiz_data
     except Exception as e:
