@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw, MessageSquareText, Link as LinkIcon, FileText, ClipboardList, HelpCircle, Database, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
 import { actionButtonClass, cn } from '../lib/utils';
+import { SimpleMarkdown } from "./SimpleMarkdown";
 
 interface Message {
   id: string;
@@ -213,9 +214,7 @@ const LearningPathCard = ({ data }: { data: NonNullable<Message["learningPath"]>
                     <summary className="cursor-pointer text-xs font-semibold text-gray-700 py-1">
                         Optional details
                     </summary>
-                    <div className="mt-2 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                        {data.detailsText}
-                    </div>
+                    <SimpleMarkdown className="mt-2" text={data.detailsText} />
                 </details>
             )}
 

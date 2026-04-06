@@ -14,6 +14,7 @@ import {
     type PendingQuiz
 } from '../api/client';
 import { actionButtonClass, cn } from '../lib/utils';
+import { SimpleMarkdown } from "./SimpleMarkdown";
 
 interface LearningPathWeaknessDetail {
     topic: string;
@@ -1604,9 +1605,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                             <summary className="cursor-pointer text-xs font-semibold text-gray-700 py-1">
                                                                 Optional details
                                                             </summary>
-                                                            <div className="mt-2 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
-                                                                {learningPath.study_plan}
-                                                            </div>
+                                                            <SimpleMarkdown className="mt-2" text={learningPath.study_plan} />
                                                         </details>
                                                     </div>
                                                 );
