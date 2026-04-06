@@ -225,6 +225,10 @@ export const teacherApi = {
         const response = await api.get<PendingQuiz[]>('/ai/quizzes/pending', { params: { course_id: courseId } });
         return response.data;
     },
+    getApprovedQuizzes: async (courseId: number) => {
+        const response = await api.get<PendingQuiz[]>('/ai/quizzes/approved', { params: { course_id: courseId } });
+        return response.data;
+    },
     generateQuizCandidates: async (courseId: number, topic: string, count: number = 1) => {
         const response = await api.post<PendingQuiz[]>('/ai/quizzes/generate', { course_id: courseId, topic, count });
         return response.data;

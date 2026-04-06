@@ -577,6 +577,18 @@ def get_pending_quizzes(course_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/quizzes/approved", response_model=List[PendingQuiz])
+def get_approved_quizzes(course_id: int):
+    """
+    Get all approved quizzes for a course.
+    """
+    try:
+        quizzes = quiz_service.get_quizzes(course_id, status="approved")
+        return quizzes
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/quizzes/generate", response_model=List[PendingQuiz])
 def generate_quiz_candidates(request: TeacherQuizRequest):
     """
