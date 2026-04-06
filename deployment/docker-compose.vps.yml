@@ -10,8 +10,7 @@ services:
     restart: always
     environment:
       - MOODLE_URL=https://bcccs.octanity.net/lms
-      # NOTE: Replace with your actual Moodle Token if needed
-      - MOODLE_TOKEN=${MOODLE_TOKEN:-b20ea69c39b5def946b9be1d5171f697}
+      - MOODLE_TOKEN=${MOODLE_TOKEN}
       
       # Use Groq for fast inference
       - LLM_PROVIDER=groq

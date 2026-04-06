@@ -66,6 +66,29 @@ class MoodleClient:
         """
         return self._call_moodle("core_course_get_contents", {"courseid": course_id})
 
+    def get_forum_discussions(self, forum_id: int, per_page: int = 5) -> List[Dict[str, Any]]:
+        """
+        Get recent discussions for a forum activity.
+        Returns discussion metadata (e.g., title, timestamps) without requiring post content extraction.
+        """
+        try:
+            resp = self._call_moodle(
+                "mod_forum_get_forum_discussions_paginated",
+                {
+                    "forumid": forum_id,
+                    "sortby": "timemodified",
+                    "sortdirection": "DESC",
+                    "page": 0,
+                    "perpage": per_page,
+                },
+                method="GET",
+            )
+            discussions = resp.get("discussions") if isinstance(resp, dict) else None
+            return discussions if isinstance(discussions, list) else []
+        except Exception as e:
+            print(f"Warning: failed to fetch forum discussions for forum_id={forum_id}: {e}")
+            return []
+
     def get_user_activities(self, course_id: int, user_id: int) -> Dict[str, Any]:
         """
         Get student's activity completion status and grades.

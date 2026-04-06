@@ -27,6 +27,12 @@ export interface ChatResponse {
     source: string;
     type: string;
     course_id?: number;
+    cmid?: number;
+    moodle_path?: string | null;
+    module?: string;
+    section?: string;
+    forum_latest_discussion?: string | null;
+    forum_latest_discussion_date?: string | null;
   }>;
 }
 

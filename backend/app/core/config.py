@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     
     # Moodle Settings
     MOODLE_URL: str
+    MOODLE_PUBLIC_URL: Optional[str] = None
     MOODLE_TOKEN: Optional[str] = None
     ENABLE_MOCK_MOODLE: bool = False
     

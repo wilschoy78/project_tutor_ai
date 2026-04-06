@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion } from 'lucide-react';
+import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion, HelpCircle, Maximize2 } from 'lucide-react';
 import {
+    api,
     dashboardApi,
     chatApi,
     moodleApi,
@@ -35,6 +36,9 @@ interface KnowledgeBaseSource {
     name: string;
     type: string;
     chunks: number;
+    section?: string;
+    cmid?: number | null;
+    moodle_path?: string | null;
 }
 
 interface KnowledgeBaseData {
@@ -54,6 +58,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [courses, setCourses] = useState<MoodleCourse[]>([]);
     const [isIngesting, setIsIngesting] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [syncProgressPercent, setSyncProgressPercent] = useState<number | null>(null);
+    const [lastAnalyticsSyncedAt, setLastAnalyticsSyncedAt] = useState<Date | null>(null);
+    const [analyticsHighlight, setAnalyticsHighlight] = useState(false);
+    const [toast, setToast] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+    const toastTimerRef = React.useRef<number | null>(null);
+    const [lastAnalyticsDetails, setLastAnalyticsDetails] = useState<string | null>(null);
+    const [isSyncHelpOpen, setIsSyncHelpOpen] = useState(false);
+    const [kbCoverage, setKbCoverage] = useState<{ documentCount: number; sourceCount: number; qbankChunks: number } | null>(null);
+    const [isKbCoverageLoading, setIsKbCoverageLoading] = useState(false);
+    const [moodleReturnUrl, setMoodleReturnUrl] = useState<string | null>(null);
+    const [fullScreenUrl, setFullScreenUrl] = useState<string | null>(null);
+    const [isEmbedded, setIsEmbedded] = useState(false);
+    const [teacherModeDetailsOpen, setTeacherModeDetailsOpen] = useState(true);
+    const teacherModeDetailsTouchedRef = React.useRef(false);
+    const syncProgressIntervalRef = React.useRef<number | null>(null);
+    const syncTimeoutRef = React.useRef<number | null>(null);
+    const syncRequestIdRef = React.useRef(0);
+    const timedOutSyncRequestIdsRef = React.useRef<Set<number>>(new Set());
 
     // Modal State
     const [selectedStudent, setSelectedStudent] = useState<{ id: number; name: string } | null>(null);
@@ -67,6 +89,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [kbData, setKbData] = useState<KnowledgeBaseData | null>(null);
     const [isLoadingKb, setIsLoadingKb] = useState(false);
     const [isClearingKb, setIsClearingKb] = useState(false);
+    const [isClearKbConfirmOpen, setIsClearKbConfirmOpen] = useState(false);
+    const [clearKbConfirmText, setClearKbConfirmText] = useState("");
+    const [kbSearch, setKbSearch] = useState("");
+    const [kbTypeFilters, setKbTypeFilters] = useState<Record<string, boolean>>({
+        forum: true,
+        page: true,
+        quiz: true,
+        qbank: true,
+        url: true,
+        assignment: true,
+    });
 
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [profileStudent, setProfileStudent] = useState<{ id: number; name: string } | null>(null);
@@ -82,25 +115,220 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [pendingQuizzes, setPendingQuizzes] = useState<PendingQuiz[]>([]);
     const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
     const [generateTopic, setGenerateTopic] = useState('');
+    const [previewStudentId, setPreviewStudentId] = useState<number | null>(null);
+    const [pendingQuizTopicFilter, setPendingQuizTopicFilter] = useState<string>("");
+    const [pendingQuizSort, setPendingQuizSort] = useState<"newest" | "oldest" | "topic_az" | "topic_za">("newest");
 
     useEffect(() => {
         if (initialCourseId) {
             setCourseId(initialCourseId);
-        } else {
-            const fetchCourses = async () => {
-                try {
-                    const data = await moodleApi.getCourses();
-                    setCourses(data);
-                    if (data.length > 0 && !data.find(c => c.id === courseId)) {
-                        setCourseId(data[0].id);
-                    }
-                } catch (error) {
-                    console.error("Failed to fetch courses", error);
-                }
-            };
-            fetchCourses();
         }
+        const fetchCourses = async () => {
+            try {
+                const data = await moodleApi.getCourses();
+                setCourses(data);
+                if (!initialCourseId && data.length > 0 && !data.find(c => c.id === courseId)) {
+                    setCourseId(data[0].id);
+                }
+            } catch (error) {
+                console.error("Failed to fetch courses", error);
+            }
+        };
+        fetchCourses();
     }, [initialCourseId, courseId]);
+
+    useEffect(() => {
+        const key = `aiTutor:moodleReturn:${courseId}`;
+        try {
+            const stored = window.localStorage.getItem(key);
+            if (stored) {
+                setMoodleReturnUrl(stored);
+                return;
+            }
+        } catch {
+            void 0;
+        }
+
+        try {
+            const ref = document.referrer ? String(document.referrer) : "";
+            if (!ref) return;
+            if (!/^https?:\/\//i.test(ref)) return;
+            window.localStorage.setItem(key, ref);
+            setMoodleReturnUrl(ref);
+        } catch {
+            void 0;
+        }
+    }, [courseId]);
+
+    useEffect(() => {
+        try {
+            setIsEmbedded(window.self !== window.top);
+        } catch {
+            setIsEmbedded(true);
+        }
+
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set("mode", "fullscreen");
+            setFullScreenUrl(url.toString());
+        } catch {
+            setFullScreenUrl(null);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (teacherModeDetailsTouchedRef.current) return;
+        setTeacherModeDetailsOpen(!isEmbedded);
+    }, [isEmbedded]);
+
+    useEffect(() => {
+        return () => {
+            if (toastTimerRef.current) {
+                window.clearTimeout(toastTimerRef.current);
+            }
+            if (syncProgressIntervalRef.current) {
+                window.clearInterval(syncProgressIntervalRef.current);
+            }
+            if (syncTimeoutRef.current) {
+                window.clearTimeout(syncTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    const getAnalyticsSnapshot = (a: DashboardAnalytics) => {
+        const totalStudents = Number(a.total_students) || 0;
+        const activeStudents =
+            typeof a.active_students === 'number'
+                ? a.active_students
+                : (a.students || []).filter((s: StudentAnalytics) => (Number(s.avg_score) || 0) > 0).length;
+        const averageScore = Number(a.average_score) || 0;
+        const atRisk = (a.students || []).filter((s: StudentAnalytics) => {
+            if (s.risk_level) return s.risk_level === 'at_risk';
+            return (Number(s.avg_score) || 0) < 50;
+        }).length;
+        const quizzesTakenTotal = (a.students || []).reduce((sum: number, s: StudentAnalytics) => sum + (Number(s.quizzes_taken) || 0), 0);
+        const aiQuizzesTakenTotal = (a.students || []).reduce((sum: number, s: StudentAnalytics) => sum + (Number(s.ai_quizzes_taken) || 0), 0);
+        const modulesCompletedTotal = (a.students || []).reduce(
+            (sum: number, s: StudentAnalytics) => sum + (Number(s.completed_modules_count) || 0),
+            0
+        );
+        return { totalStudents, activeStudents, averageScore, atRisk, quizzesTakenTotal, aiQuizzesTakenTotal, modulesCompletedTotal };
+    };
+
+    const extractChecklistFromStudyPlan = (studyPlan?: string) => {
+        if (!studyPlan) return [];
+        const out: string[] = [];
+        const seen = new Set<string>();
+        const lines = studyPlan.split(/\r?\n/);
+        for (const line of lines) {
+            const t = line.trim();
+            if (!t) continue;
+            const stepMatch = t.match(/^\*\*Step\s*\d+:\s*([^*]+)\*\*$/i) || t.match(/^Step\s*\d+:\s*(.+)$/i);
+            if (stepMatch) {
+                const v = stepMatch[1].trim();
+                if (v && !seen.has(v)) {
+                    seen.add(v);
+                    out.push(v);
+                }
+                continue;
+            }
+            const bulletMatch = t.match(/^[-*]\s+(.*)$/);
+            if (bulletMatch) {
+                const v = bulletMatch[1].trim();
+                if (v && v.length <= 140 && !seen.has(v)) {
+                    seen.add(v);
+                    out.push(v);
+                }
+            }
+        }
+        return out.slice(0, 6);
+    };
+
+    const normalizeKbType = (t?: string) => {
+        const v = String(t || "").toLowerCase();
+        if (v.includes("forum")) return "forum";
+        if (v.includes("page")) return "page";
+        if (v.includes("assign")) return "assignment";
+        if (v.includes("qbank") || v.includes("question")) return "qbank";
+        if (v.includes("quiz")) return "quiz";
+        if (v.includes("url")) return "url";
+        return "other";
+    };
+
+    const getFilteredKbSources = (data: KnowledgeBaseData) => {
+        const search = kbSearch.trim().toLowerCase();
+        return (data.sources || []).filter((s) => {
+            const normalized = normalizeKbType(s.type);
+            const enabled = normalized === "other" ? true : !!kbTypeFilters[normalized];
+            if (!enabled) return false;
+            if (!search) return true;
+            const hay = `${s.name} ${s.type} ${s.section || ""}`.toLowerCase();
+            return hay.includes(search);
+        });
+    };
+
+    const getSafeMoodleActivityHref = (source: KnowledgeBaseSource) => {
+        const base = api.defaults.baseURL || "";
+        const tryParseCmid = () => {
+            const raw = source.moodle_path;
+            if (!raw) return null;
+            const s = String(raw);
+            const q = s.includes("?") ? s.split("?")[1] : "";
+            if (!q) return null;
+            const params = new URLSearchParams(q);
+            const id = params.get("id");
+            if (!id) return null;
+            const n = Number(id);
+            return Number.isFinite(n) ? n : null;
+        };
+        const cmid = source.cmid ?? tryParseCmid();
+        if (!cmid) return null;
+        return `${base}/moodle/activity-link?course_id=${encodeURIComponent(String(courseId))}&cmid=${encodeURIComponent(String(cmid))}`;
+    };
+
+    const downloadKbCsv = () => {
+        if (!kbData) return;
+        const id = kbData.course_id ?? courseId;
+        const course = courses.find(c => c.id === id);
+        const courseShort = course?.shortname ? String(course.shortname) : "";
+        const courseFull = course?.fullname ? String(course.fullname) : "";
+
+        const rows = getFilteredKbSources(kbData);
+        const header = ["course_id", "course_shortname", "course_fullname", "section", "name", "type", "chunks"];
+        const escapeCell = (v: unknown) => {
+            const s = String(v ?? "");
+            const needsQuotes = /[",\r\n]/.test(s);
+            const escaped = s.replace(/"/g, '""');
+            return needsQuotes ? `"${escaped}"` : escaped;
+        };
+
+        const lines = [
+            header.join(","),
+            ...rows.map((r) =>
+                [
+                    escapeCell(id),
+                    escapeCell(courseShort),
+                    escapeCell(courseFull),
+                    escapeCell(r.section || ""),
+                    escapeCell(r.name),
+                    escapeCell(r.type),
+                    escapeCell(r.chunks),
+                ].join(",")
+            ),
+        ];
+        const csv = lines.join("\r\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const date = new Date().toISOString().slice(0, 10);
+        const baseName = courseShort ? courseShort.replace(/[^A-Za-z0-9_-]+/g, "_") : `course_${id}`;
+        a.href = url;
+        a.download = `kb_summary_${baseName}_${date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
 
     const loadDashboard = useCallback(async () => {
         try {
@@ -114,9 +342,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         }
     }, [courseId]);
 
+    const loadKbCoverage = useCallback(async () => {
+        setIsKbCoverageLoading(true);
+        try {
+            const data = await chatApi.getKnowledgeBase(courseId);
+            const documentCount = Number(data?.document_count) || 0;
+            const sourceCount = Array.isArray(data?.sources) ? data.sources.length : 0;
+            const qbankChunks = Array.isArray(data?.sources)
+                ? data.sources.reduce((sum: number, s: { type?: string; chunks?: number }) => {
+                      const t = String(s?.type || "").toLowerCase();
+                      const isQbank = t.includes("qbank") || t.includes("question");
+                      return sum + (isQbank ? Number(s?.chunks) || 0 : 0);
+                  }, 0)
+                : 0;
+            setKbCoverage({ documentCount, sourceCount, qbankChunks });
+        } catch (error) {
+            console.error("Failed to load KB coverage", error);
+            setKbCoverage(null);
+        } finally {
+            setIsKbCoverageLoading(false);
+        }
+    }, [courseId]);
+
     useEffect(() => {
         loadDashboard();
     }, [loadDashboard]);
+
+    useEffect(() => {
+        loadKbCoverage();
+    }, [loadKbCoverage]);
 
     const loadPendingQuizzes = useCallback(async () => {
         try {
@@ -135,6 +389,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             loadPendingQuizzes();
         }
     }, [activeTab, loadPendingQuizzes]);
+
+    useEffect(() => {
+        if (previewStudentId) return;
+        const firstStudentId = analytics?.students?.[0]?.id;
+        if (typeof firstStudentId === "number") {
+            setPreviewStudentId(firstStudentId);
+        }
+    }, [analytics, previewStudentId]);
 
     const handleApproveQuiz = async (quizId: string) => {
         try {
@@ -169,6 +431,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         }
     };
 
+    const encodePreviewQuizParam = (quiz: PendingQuiz) => {
+        try {
+            const payload = JSON.stringify({
+                question: quiz.question,
+                options: quiz.options,
+                correct_answer: quiz.correct_answer,
+                explanation: quiz.explanation,
+                hint: quiz.hint,
+            });
+            const bytes = new TextEncoder().encode(payload);
+            let bin = "";
+            bytes.forEach((b) => {
+                bin += String.fromCharCode(b);
+            });
+            const b64 = window.btoa(bin);
+            return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+        } catch {
+            return null;
+        }
+    };
+
+    const buildStudentPreviewUrl = (quiz: PendingQuiz) => {
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set("role", "student");
+            url.searchParams.set("courseId", String(courseId));
+            url.searchParams.set("studentId", String(previewStudentId || 3));
+            const encoded = encodePreviewQuizParam(quiz);
+            if (encoded) {
+                url.searchParams.set("previewQuiz", encoded);
+            }
+            if (quiz.topic) {
+                url.searchParams.set("previewTopic", quiz.topic);
+            }
+            return url.toString();
+        } catch {
+            return null;
+        }
+    };
+
     const handleViewPlan = async (studentId: number, studentName: string) => {
         setSelectedStudent({ id: studentId, name: studentName });
         setLearningPath(null);
@@ -195,16 +497,94 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     };
 
     const handleSync = async () => {
+        const requestId = ++syncRequestIdRef.current;
+        if (isSyncing) return;
         try {
             setIsSyncing(true);
+            setSyncProgressPercent(5);
+            if (syncProgressIntervalRef.current) window.clearInterval(syncProgressIntervalRef.current);
+            if (syncTimeoutRef.current) window.clearTimeout(syncTimeoutRef.current);
+
+            const startedAt = Date.now();
+            syncProgressIntervalRef.current = window.setInterval(() => {
+                const elapsedMs = Date.now() - startedAt;
+                const estimatedMs = 12000;
+                const pct = Math.min(90, Math.round((elapsedMs / estimatedMs) * 90));
+                setSyncProgressPercent((prev) => {
+                    if (prev === null) return pct;
+                    return Math.max(prev, pct);
+                });
+            }, 300);
+
+            syncTimeoutRef.current = window.setTimeout(() => {
+                timedOutSyncRequestIdsRef.current.add(requestId);
+                setIsSyncing(false);
+                setSyncProgressPercent(null);
+                setToast({ tone: 'error', message: 'Sync is taking longer than expected. Click Retry to try again.' });
+                if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                toastTimerRef.current = window.setTimeout(() => setToast(null), 4500);
+            }, 15000);
+
+            const before = analytics ? getAnalyticsSnapshot(analytics) : null;
             const data = await dashboardApi.syncAnalytics(courseId);
+            if (timedOutSyncRequestIdsRef.current.has(requestId)) return;
+            if (requestId !== syncRequestIdRef.current) return;
+
             setAnalytics(data);
+            const syncedAt = new Date();
+            setLastAnalyticsSyncedAt(syncedAt);
+            setAnalyticsHighlight(true);
+            const after = getAnalyticsSnapshot(data);
+            const parts: string[] = [];
+            if (before) {
+                parts.push(`Class avg: ${before.averageScore.toFixed(1)}% → ${after.averageScore.toFixed(1)}%`);
+                parts.push(`At risk: ${before.atRisk} → ${after.atRisk}`);
+                parts.push(`Active: ${before.activeStudents} → ${after.activeStudents}`);
+                const deltaQuizResults = after.quizzesTakenTotal - before.quizzesTakenTotal;
+                const deltaAiQuizResults = after.aiQuizzesTakenTotal - before.aiQuizzesTakenTotal;
+                const deltaCompletions = after.modulesCompletedTotal - before.modulesCompletedTotal;
+                parts.push(`New quiz results ingested: ${deltaQuizResults >= 0 ? `+${deltaQuizResults}` : String(deltaQuizResults)}`);
+                parts.push(`New completions ingested: ${deltaCompletions >= 0 ? `+${deltaCompletions}` : String(deltaCompletions)}`);
+                parts.push(`New AI quizzes ingested: ${deltaAiQuizResults >= 0 ? `+${deltaAiQuizResults}` : String(deltaAiQuizResults)}`);
+            } else {
+                parts.push(`Class avg: ${after.averageScore.toFixed(1)}%`);
+                parts.push(`At risk: ${after.atRisk}`);
+                parts.push(`Active: ${after.activeStudents}`);
+                parts.push(`Quiz results tracked: ${after.quizzesTakenTotal}`);
+                parts.push(`Completions tracked: ${after.modulesCompletedTotal}`);
+                parts.push(`AI quizzes tracked: ${after.aiQuizzesTakenTotal}`);
+            }
+            setLastAnalyticsDetails(`Updated based on latest sync. ${parts.join(' • ')}`);
+            setToast({ tone: 'success', message: 'Class analytics updated successfully.' });
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
+            window.setTimeout(() => setAnalyticsHighlight(false), 1800);
+            setSyncProgressPercent(100);
+            window.setTimeout(() => setSyncProgressPercent(null), 600);
+            loadKbCoverage();
+            try {
+                window.localStorage.setItem(`aiTutor:teacherAnalyticsUpdatedAt:${courseId}`, String(syncedAt.getTime()));
+            } catch {
+                void 0;
+            }
         } catch (error: unknown) {
             console.error("Failed to sync analytics:", error);
             const err = error as { response?: { data?: { detail?: string } }; message?: string };
             const detail = err.response?.data?.detail || err.message || "Unknown error";
             alert(`Failed to sync analytics: ${detail}`);
+            setToast({ tone: 'error', message: `Sync failed: ${detail}. Click Retry to try again.` });
+            setLastAnalyticsDetails(null);
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 4000);
         } finally {
+            if (syncProgressIntervalRef.current) {
+                window.clearInterval(syncProgressIntervalRef.current);
+                syncProgressIntervalRef.current = null;
+            }
+            if (syncTimeoutRef.current) {
+                window.clearTimeout(syncTimeoutRef.current);
+                syncTimeoutRef.current = null;
+            }
             setIsSyncing(false);
         }
     };
@@ -225,12 +605,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const closeKbModal = () => {
         setIsKbOpen(false);
         setKbData(null);
+        setIsClearKbConfirmOpen(false);
+        setClearKbConfirmText("");
+        setKbSearch("");
     };
 
     const handleClearKb = async () => {
         if (!courseId) return;
-        const confirmed = window.confirm('Clear all ingested knowledge base content for this course?');
-        if (!confirmed) return;
         try {
             setIsClearingKb(true);
             await chatApi.clearKnowledgeBase(courseId);
@@ -239,6 +620,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                 document_count: 0,
                 sources: []
             });
+            setIsClearKbConfirmOpen(false);
+            setClearKbConfirmText("");
         } catch (error) {
             console.error('Failed to clear knowledge base', error);
             alert('Failed to clear knowledge base.');
@@ -323,7 +706,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     return (
         <div className="flex flex-col h-screen bg-gray-50 sm:max-w-6xl sm:mx-auto sm:border-x sm:border-gray-200">
             <header className="bg-white border-b border-gray-200 px-4 py-4 sm:p-6 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-600 p-2 rounded-lg">
                             <BarChart3 className="w-6 h-6 text-white" />
@@ -332,23 +715,111 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">Teacher Dashboard</h1>
                             <p className="text-sm text-gray-500">Monitor student progress and AI interactions</p>
+                            <div className="mt-1">
+                                <span
+                                    className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border bg-indigo-50 border-indigo-200 text-indigo-800"
+                                    title="Teacher view: monitor class analytics, review quiz candidates, manage KB coverage, and validate student experience via preview."
+                                >
+                                    Role: Teacher
+                                </span>
+                            </div>
+                            <details
+                                className="mt-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
+                                open={teacherModeDetailsOpen}
+                                onToggle={(e) => {
+                                    teacherModeDetailsTouchedRef.current = true;
+                                    setTeacherModeDetailsOpen((e.currentTarget as HTMLDetailsElement).open);
+                                }}
+                            >
+                                <summary className="cursor-pointer select-none">
+                                    <span className="font-semibold text-gray-900">Teacher mode enabled</span>
+                                    <span className="ml-2 text-blue-700 underline underline-offset-2 font-semibold">
+                                        {teacherModeDetailsOpen ? "Hide" : "Show"}
+                                    </span>
+                                </summary>
+                                <div className="mt-2">
+                                    Features: Sync Class Analytics • View Knowledge Base • Refresh Content • Pending Quizzes review • Preview student view • View/Pin Learning Paths
+                                </div>
+                            </details>
+                            <div className="mt-1">
+                                <div className="inline-flex items-center gap-2 text-xs text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full max-w-[90vw] sm:max-w-[520px]">
+                                    <BookOpen className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                                    <span className="truncate">
+                                        {(() => {
+                                            const course = courses.find(c => c.id === courseId);
+                                            if (!course) return `Course ${courseId} (ID: ${courseId})`;
+                                            const left = course.shortname ? course.shortname : `Course ${course.id}`;
+                                            const right = course.fullname ? course.fullname : "";
+                                            return right ? `${left} — ${right} (ID: ${course.id})` : `${left} (ID: ${course.id})`;
+                                        })()}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="mt-1 text-xs text-gray-500">
+                                {isKbCoverageLoading ? (
+                                    <span>Knowledge Base: checking coverage…</span>
+                                ) : kbCoverage ? (
+                                    <span>
+                                        {isEmbedded
+                                            ? `KB: ${kbCoverage.documentCount} ch • ${kbCoverage.sourceCount} src • Qbank ${kbCoverage.qbankChunks}`
+                                            : `Knowledge Base coverage: ${kbCoverage.documentCount} chunks • ${kbCoverage.sourceCount} sources • Qbank: ${kbCoverage.qbankChunks} chunks`}
+                                    </span>
+                                ) : (
+                                    <span>Knowledge Base coverage: unavailable</span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     
-                    <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                    <div className="flex flex-col gap-2 sm:items-end">
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:justify-end sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0">
+                        <button
+                            type="button"
+                            onClick={() => setIsSyncHelpOpen(v => !v)}
+                            className="p-2 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-600"
+                            title="Help: what each button does"
+                        >
+                            <HelpCircle className="w-4 h-4" />
+                        </button>
+                        {(isEmbedded && fullScreenUrl) && (
+                            <a
+                                href={fullScreenUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 flex-shrink-0"
+                                title="Open full-screen view"
+                            >
+                                <Maximize2 className="w-4 h-4" />
+                                Full screen
+                            </a>
+                        )}
+                        {moodleReturnUrl && (
+                            <a
+                                href={moodleReturnUrl}
+                                target="_top"
+                                rel="noreferrer"
+                                className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors flex-shrink-0"
+                                title="Back to your Moodle course page"
+                            >
+                                Back to Moodle
+                            </a>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:justify-end sm:overflow-visible sm:pb-0 sm:mx-0 sm:px-0">
                         <button
                             onClick={handleSync}
                             disabled={isSyncing}
-                            className={actionButtonClass("info")}
-                            title="Sync latest Moodle data (students, quizzes, engagement) and refresh dashboard analytics."
+                            className={cn(actionButtonClass("info"), "!w-auto flex-shrink-0")}
+                            title="Sync class analytics from Moodle (students, quizzes, engagement) and refresh the dashboard."
                         >
                             <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
-                            {isSyncing ? 'Syncing...' : 'Sync Data'}
+                            {isSyncing && syncProgressPercent !== null ? `Syncing… ${syncProgressPercent}%` : (isSyncing ? 'Syncing…' : 'Sync Class Analytics')}
                         </button>
 
                         <button
                             onClick={handleViewKb}
-                            className={actionButtonClass("primary")}
+                            className={cn(actionButtonClass("primary"), "!w-auto flex-shrink-0")}
                             title="View what course materials are currently ingested and available for AI grounded answers."
                         >
                             <BookOpen className="w-4 h-4" />
@@ -358,46 +829,149 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         <button
                             onClick={handleIngest}
                             disabled={isIngesting}
-                            className={actionButtonClass("success")}
-                            title="Extract, chunk, and index this course content into the AI knowledge base."
+                            className={cn(actionButtonClass("success"), "!w-auto flex-shrink-0")}
+                            title="Refresh Content updates the AI knowledge base by extracting and indexing this course’s Moodle materials (does not change Moodle content). Included activity types: Page, URL, Assignment, Quiz, Forum (titles/provenance)."
                         >
                             {isIngesting ? (
                                 <RefreshCw className="w-4 h-4 animate-spin" />
                             ) : (
                                 <Database className="w-4 h-4" />
                             )}
-                            {isIngesting ? 'Ingesting...' : 'Ingest Course'}
+                            {isIngesting ? 'Refreshing…' : 'Refresh Content'}
                         </button>
-
-                        {!initialCourseId && (
-                            <select 
-                                value={courseId}
-                                onChange={(e) => setCourseId(Number(e.target.value))}
-                                className="p-2 border rounded-md text-sm bg-white shadow-sm"
-                            >
-                                {courses.length > 0 ? (
-                                    courses.map(course => (
-                                        <option key={course.id} value={course.id}>
-                                            {course.fullname} (ID: {course.id})
-                                        </option>
-                                    ))
-                                ) : (
-                                    <>
-                                        <option value={101}>Intro to AI (Course 101)</option>
-                                        <option value={102}>Advanced Python (Course 102)</option>
-                                    </>
-                                )}
-                            </select>
+                      </div>
+                        {isSyncing && syncProgressPercent !== null && (
+                            <div className="w-full">
+                                <div className="flex items-center justify-between text-[11px] text-gray-500">
+                                    <span>Syncing…</span>
+                                    <span>{syncProgressPercent}%</span>
+                                </div>
+                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1">
+                                    <div
+                                        className="h-full bg-blue-500 transition-all"
+                                        style={{ width: `${syncProgressPercent}%` }}
+                                    />
+                                </div>
+                            </div>
                         )}
-                        
-                        {initialCourseId && (
-                             <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                                <BookOpen className="w-4 h-4 text-gray-500" />
-                                <span>Course {courseId}</span>
-                             </div>
+                        <details className="w-full text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" open={!isEmbedded}>
+                          <summary className="cursor-pointer select-none font-semibold text-gray-700">
+                            Analytics notes
+                            <span className="ml-2 text-blue-700 underline underline-offset-2">
+                              {isEmbedded ? "Show" : "Hide"}
+                            </span>
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <div>
+                              Sync Class Analytics refreshes teacher dashboard metrics. For the latest student progress, have students run Sync My Progress first, then run this sync.
+                            </div>
+                            <div>
+                              Analytics update cadence: some metrics may not change immediately after a single student action. Risk is influenced by patterns such as low quiz performance, missing completions, and limited engagement over time.
+                            </div>
+                          </div>
+                        </details>
+                        <button
+                          type="button"
+                          onClick={() => setIsSyncHelpOpen(v => !v)}
+                          className={cn(
+                            "w-full sm:w-auto text-xs font-semibold text-blue-700 underline underline-offset-2 text-left sm:text-right",
+                            isEmbedded && "hidden"
+                          )}
+                        >
+                          {isSyncHelpOpen ? "Hide help" : "What do these do?"}
+                        </button>
+                        {isSyncHelpOpen && (
+                          <div className="w-full text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                            <div className="font-semibold text-gray-900 mb-1">Quick help</div>
+                            <ul className="list-disc pl-5 space-y-1">
+                              <li><span className="inline-flex items-center gap-1 font-semibold"><RefreshCw className="w-3 h-3" /> Sync Class Analytics</span> updates teacher dashboard metrics from Moodle activity data.</li>
+                              <li><span className="inline-flex items-center gap-1 font-semibold"><Database className="w-3 h-3" /> Refresh Content</span> rebuilds the AI knowledge base for this course (does not change Moodle content).</li>
+                              <li><span className="inline-flex items-center gap-1 font-semibold"><BookOpen className="w-3 h-3" /> View Knowledge Base</span> shows what materials are currently ingested and available for grounded answers.</li>
+                              <li><span className="font-semibold">Student precondition</span>: students should run Sync My Progress first for freshest analytics.</li>
+                            </ul>
+                            <details className="mt-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+                              <summary className="cursor-pointer text-xs font-semibold text-gray-700">
+                                Moodle placement tips
+                              </summary>
+                              <div className="mt-2 space-y-1">
+                                <div><span className="font-semibold">Teacher dashboard block</span>: place this dashboard where instructors monitor class progress.</div>
+                                <div><span className="font-semibold">Course page</span>: add a link or block entry so teachers can jump between the course and dashboard quickly.</div>
+                                <div><span className="font-semibold">Recommended demo flow</span>: Refresh Content → student Sync My Progress → teacher Sync Class Analytics → View Plan/KB.</div>
+                              </div>
+                            </details>
+                          </div>
+                        )}
+                        {lastAnalyticsDetails && (
+                            <div className="w-full text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                                {lastAnalyticsDetails}
+                            </div>
+                        )}
+                        {toast && (
+                            <div
+                              className={cn(
+                                "w-full text-xs font-medium px-3 py-2 rounded-lg border",
+                                toast.tone === "success"
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                                  : "bg-red-50 border-red-200 text-red-800"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span>{toast.message}</span>
+                                {toast.tone === "error" && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSync}
+                                    disabled={isSyncing}
+                                    className="text-xs font-semibold underline underline-offset-2 disabled:opacity-50"
+                                  >
+                                    Retry
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                        )}
+                        {lastAnalyticsSyncedAt && (
+                            <div className="w-full sm:w-auto text-xs text-gray-500 sm:text-right">
+                              <span title={lastAnalyticsSyncedAt.toLocaleString()}>
+                                Updated at {lastAnalyticsSyncedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
                         )}
                     </div>
-                </div>
+
+                        {!initialCourseId && (
+                            <div className="flex flex-col gap-1 w-full sm:w-auto">
+                                <div className="text-[11px] text-gray-500">
+                                    {(() => {
+                                        const selected = courses.find(c => c.id === courseId);
+                                        if (!selected) return `Course (ID: ${courseId})`;
+                                        const left = selected.shortname ? selected.shortname : `Course ${selected.id}`;
+                                        const right = selected.fullname ? selected.fullname : "";
+                                        return right ? `${left} — ${right} (ID: ${selected.id})` : `${left} (ID: ${selected.id})`;
+                                    })()}
+                                </div>
+                                <select 
+                                    value={courseId}
+                                    onChange={(e) => setCourseId(Number(e.target.value))}
+                                    className="p-2 border rounded-md text-sm bg-white shadow-sm"
+                                    aria-label="Select course"
+                                >
+                                    {courses.length > 0 ? (
+                                        courses.map(course => (
+                                            <option key={course.id} value={course.id}>
+                                                {course.fullname} (ID: {course.id})
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <option value={101}>Intro to AI (Course 101)</option>
+                                            <option value={102}>Advanced Python (Course 102)</option>
+                                        </>
+                                    )}
+                                </select>
+                            </div>
+                        )}
+                    </div>
 
                 <div className="flex gap-4 border-b border-gray-100">
                     <button
@@ -447,11 +1021,69 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             </div>
                         </div>
 
+                            <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                                <div className="text-xs font-semibold text-gray-600">Preview student view as</div>
+                                <select
+                                    value={previewStudentId ?? ''}
+                                    onChange={(e) => setPreviewStudentId(e.target.value ? Number(e.target.value) : null)}
+                                    className="p-2 border border-gray-300 rounded-md text-sm w-full sm:w-auto"
+                                    disabled={!analytics || !analytics.students || analytics.students.length === 0}
+                                >
+                                    {(analytics?.students && analytics.students.length > 0) ? (
+                                        analytics.students.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name} (ID: {s.id})
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <option value="">Load students to preview</option>
+                                    )}
+                                </select>
+                            </div>
+
+
                         <div className="space-y-4">
                             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                                 <FileQuestion className="w-5 h-5 text-gray-500" />
                                 Pending Review ({pendingQuizzes.length})
                             </h2>
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-900">
+                                <span className="font-semibold">Teacher note:</span> Approved quizzes appear in Student Pop Quiz.
+                            </div>
+                            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                    <div className="text-xs font-semibold text-gray-600">Topic</div>
+                                    <select
+                                        value={pendingQuizTopicFilter}
+                                        onChange={(e) => setPendingQuizTopicFilter(e.target.value)}
+                                        className="p-2 border border-gray-300 rounded-md text-sm w-full sm:w-auto"
+                                    >
+                                        <option value="">All topics</option>
+                                        {Array.from(new Set(pendingQuizzes.map(q => q.topic))).sort((a, b) => a.localeCompare(b)).map((t) => (
+                                            <option key={t} value={t}>{t}</option>
+                                        ))}
+                                    </select>
+                                    <div className="sm:ml-auto flex items-center gap-2">
+                                        <div className="text-xs font-semibold text-gray-600">Sort</div>
+                                        <select
+                                            value={pendingQuizSort}
+                                            onChange={(e) => setPendingQuizSort(e.target.value as typeof pendingQuizSort)}
+                                            className="p-2 border border-gray-300 rounded-md text-sm"
+                                        >
+                                            <option value="newest">Newest first</option>
+                                            <option value="oldest">Oldest first</option>
+                                            <option value="topic_az">Topic A→Z</option>
+                                            <option value="topic_za">Topic Z→A</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="mt-2 text-xs text-gray-500">
+                                    {(() => {
+                                        const filteredCount = pendingQuizzes.filter(q => !pendingQuizTopicFilter || q.topic === pendingQuizTopicFilter).length;
+                                        return `Showing ${filteredCount} of ${pendingQuizzes.length} pending quizzes`;
+                                    })()}
+                                </div>
+                            </div>
                             
                             {isLoadingQuizzes && pendingQuizzes.length === 0 ? (
                                 <div className="text-center py-10 text-gray-500">Loading quizzes...</div>
@@ -460,7 +1092,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     No pending quizzes. Generate some above!
                                 </div>
                             ) : (
-                                pendingQuizzes.map((quiz) => (
+                                pendingQuizzes
+                                    .filter((q) => !pendingQuizTopicFilter || q.topic === pendingQuizTopicFilter)
+                                    .sort((a, b) => {
+                                        if (pendingQuizSort === "newest") return Number(b.created_at) - Number(a.created_at);
+                                        if (pendingQuizSort === "oldest") return Number(a.created_at) - Number(b.created_at);
+                                        if (pendingQuizSort === "topic_az") return String(a.topic).localeCompare(String(b.topic));
+                                        if (pendingQuizSort === "topic_za") return String(b.topic).localeCompare(String(a.topic));
+                                        return 0;
+                                    })
+                                    .map((quiz) => (
                                     <div key={quiz.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                                         <div className="flex justify-between items-start mb-4">
                                             <div>
@@ -469,7 +1110,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                 </span>
                                                 <h3 className="text-lg font-medium text-gray-900">{quiz.question}</h3>
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex items-center gap-2">
+                                                {(() => {
+                                                    const previewUrl = buildStudentPreviewUrl(quiz);
+                                                    if (!previewUrl) return null;
+                                                    return (
+                                                        <a
+                                                            href={previewUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="px-2 py-1 text-sm font-medium text-indigo-700 hover:text-indigo-900 underline underline-offset-2"
+                                                            title="Preview how this quiz appears in Student View (does not save results)"
+                                                        >
+                                                            Preview student view
+                                                        </a>
+                                                    );
+                                                })()}
                                                 <button
                                                     onClick={() => handleApproveQuiz(quiz.id)}
                                                     className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -525,7 +1181,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                 ) : analytics ? (
                     <div className="space-y-6">
                         {/* Summary Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div
+                          className={cn(
+                            "rounded-xl transition-colors",
+                            analyticsHighlight && "bg-emerald-50/60 ring-2 ring-emerald-200 p-1"
+                          )}
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-blue-50 rounded-lg">
@@ -575,6 +1237,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     </div>
                                 </div>
                             </div>
+                          </div>
                         </div>
 
                         {/* Top Weaknesses */}
@@ -834,9 +1497,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     {learningPath.study_plan && (
                                         <div>
                                             <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Recommended Study Plan</h4>
-                                            <div className="prose prose-sm max-w-none text-gray-600 bg-gray-50 p-4 rounded-xl border border-gray-100 whitespace-pre-wrap font-sans">
-                                                {learningPath.study_plan}
-                                            </div>
+                                            {(() => {
+                                                const checklist = extractChecklistFromStudyPlan(learningPath.study_plan);
+                                                return (
+                                                    <div className="space-y-3">
+                                                        {checklist.length > 0 && (
+                                                            <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4">
+                                                                <div className="text-xs font-semibold text-gray-900 mb-2">Student action checklist</div>
+                                                                <div className="space-y-2">
+                                                                    {checklist.map((step) => (
+                                                                        <label key={step} className="flex items-start gap-2 text-sm text-gray-800">
+                                                                            <input type="checkbox" disabled className="mt-0.5" />
+                                                                            <span className="leading-relaxed">{step}</span>
+                                                                        </label>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        <details className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                                                            <summary className="cursor-pointer text-xs font-semibold text-gray-700 py-1">
+                                                                Optional details
+                                                            </summary>
+                                                            <div className="mt-2 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
+                                                                {learningPath.study_plan}
+                                                            </div>
+                                                        </details>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     )}
 
@@ -960,7 +1648,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             <div>
                                 <h3 className="text-xl font-bold text-gray-900">Course Knowledge Base</h3>
                                 <p className="text-sm text-gray-500">Ingested content available for AI</p>
-                                <p className="text-xs text-gray-400 mt-1">Course ID: {kbData?.course_id ?? courseId}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    {(() => {
+                                        const id = kbData?.course_id ?? courseId;
+                                        const course = courses.find(c => c.id === id);
+                                        const name = course ? `${course.shortname} — ${course.fullname}` : `Course ${id}`;
+                                        return `${name} (ID: ${id})`;
+                                    })()}
+                                </p>
                             </div>
                             <button 
                                 onClick={closeKbModal}
@@ -986,25 +1681,138 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                             <p className="text-sm text-gray-500">Total Documents</p>
                                             <p className="text-2xl font-bold text-gray-900">{kbData.document_count} Chunks</p>
                                         </div>
+                                        <div className="ml-auto text-right">
+                                            <p className="text-sm text-gray-500">Qbank</p>
+                                            <p className="text-2xl font-bold text-gray-900">
+                                                {kbData.sources.reduce((sum: number, s: KnowledgeBaseSource) => {
+                                                    const t = normalizeKbType(s.type);
+                                                    return sum + (t === "qbank" ? Number(s.chunks) || 0 : 0);
+                                                }, 0)}{" "}
+                                                Chunks
+                                            </p>
+                                        </div>
                                     </div>
 
                                     <div>
                                         <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Sources</h4>
                                         {kbData.sources && kbData.sources.length > 0 ? (
                                             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                                                <div className="p-4 border-b border-gray-100 bg-white">
+                                                    <div className="flex flex-col gap-3">
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {(() => {
+                                                                const totals = kbData.sources.reduce((acc: Record<string, number>, s) => {
+                                                                    const t = normalizeKbType(s.type);
+                                                                    acc[t] = (acc[t] || 0) + 1;
+                                                                    return acc;
+                                                                }, {});
+                                                                const order: Array<[string, string]> = [
+                                                                    ["forum", "Forum"],
+                                                                    ["page", "Page"],
+                                                                    ["quiz", "Quiz"],
+                                                                    ["qbank", "Qbank"],
+                                                                    ["url", "URL"],
+                                                                    ["assignment", "Assignment"],
+                                                                ];
+                                                                return order
+                                                                    .filter(([k]) => (totals[k] || 0) > 0)
+                                                                    .map(([k, label]) => (
+                                                                        <span
+                                                                            key={k}
+                                                                            className="px-3 py-1.5 rounded-full text-xs font-semibold border bg-gray-50 border-gray-200 text-gray-700"
+                                                                        >
+                                                                            {label} ({totals[k]})
+                                                                        </span>
+                                                                    ));
+                                                            })()}
+                                                        </div>
+                                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                                            <input
+                                                                value={kbSearch}
+                                                                onChange={(e) => setKbSearch(e.target.value)}
+                                                                placeholder="Search sources…"
+                                                                className="w-full sm:flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                            />
+                                                            {kbSearch.trim().length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setKbSearch("")}
+                                                                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                                                >
+                                                                    Clear
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {([
+                                                                ["forum", "Forum"],
+                                                                ["page", "Page"],
+                                                                ["quiz", "Quiz"],
+                                                                ["qbank", "Qbank"],
+                                                                ["url", "URL"],
+                                                                ["assignment", "Assignment"],
+                                                            ] as Array<[string, string]>).map(([key, label]) => (
+                                                                <button
+                                                                    key={key}
+                                                                    type="button"
+                                                                    onClick={() => setKbTypeFilters((prev) => ({ ...prev, [key]: !prev[key] }))}
+                                                                    className={cn(
+                                                                        "px-3 py-1.5 rounded-full text-xs font-semibold border",
+                                                                        kbTypeFilters[key]
+                                                                            ? "bg-indigo-50 border-indigo-200 text-indigo-800"
+                                                                            : "bg-white border-gray-200 text-gray-500"
+                                                                    )}
+                                                                >
+                                                                    {label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                            {(() => {
+                                                                const filtered = getFilteredKbSources(kbData);
+                                                                return `Showing ${filtered.length} of ${kbData.sources.length} sources`;
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <table className="min-w-full divide-y divide-gray-200">
                                                     <thead className="bg-gray-50">
                                                         <tr>
                                                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                                                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Open</th>
                                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Chunks</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="bg-white divide-y divide-gray-200">
-                                                        {kbData.sources.map((source: KnowledgeBaseSource, i: number) => (
+                                                        {getFilteredKbSources(kbData).map((source: KnowledgeBaseSource, i: number) => (
                                                             <tr key={i} className="hover:bg-gray-50">
-                                                                <td className="px-6 py-4 text-sm font-medium text-gray-900">{source.name}</td>
+                                                                <td className="px-6 py-4">
+                                                                    <div className="text-sm font-medium text-gray-900">{source.name}</div>
+                                                                    {source.section && (
+                                                                        <div className="text-xs text-gray-500 mt-1">
+                                                                            {source.section}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
                                                                 <td className="px-6 py-4 text-sm text-gray-500 capitalize">{source.type}</td>
+                                                                <td className="px-6 py-4 text-sm">
+                                                                    {(() => {
+                                                                        const href = getSafeMoodleActivityHref(source);
+                                                                        if (!href) return <span className="text-gray-400 text-xs">—</span>;
+                                                                        return (
+                                                                            <a
+                                                                                href={href}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                className="text-indigo-700 hover:text-indigo-900 underline underline-offset-2 text-xs font-semibold"
+                                                                                title="Open the Moodle activity (permission checked)"
+                                                                            >
+                                                                                Open in Moodle
+                                                                            </a>
+                                                                        );
+                                                                    })()}
+                                                                </td>
                                                                 <td className="px-6 py-4 text-sm text-gray-500 text-right">{source.chunks}</td>
                                                             </tr>
                                                         ))}
@@ -1025,24 +1833,84 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             )}
                         </div>
                         
-                        <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-between items-center">
-                            <button
-                                onClick={handleClearKb}
-                                disabled={isClearingKb}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                                    isClearingKb
-                                        ? 'bg-red-50 border-red-200 text-red-300 cursor-not-allowed'
-                                        : 'bg-white border-red-300 text-red-600 hover:bg-red-50'
-                                }`}
-                            >
-                                {isClearingKb ? 'Clearing...' : 'Clear Knowledge Base'}
-                            </button>
-                            <button
-                                onClick={closeKbModal}
-                                className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                            >
-                                Close
-                            </button>
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex flex-col gap-3">
+                            {isClearKbConfirmOpen && (
+                                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-900">
+                                    <div className="font-semibold">This will clear the AI Knowledge Base for this course.</div>
+                                    <ul className="mt-2 list-disc pl-5 space-y-1 text-red-900/90">
+                                        <li>Removes all ingested chunks/sources used for grounded answers in this course.</li>
+                                        <li>Does not change Moodle content or student grades.</li>
+                                        <li>Students may see fewer/no sources until Refresh Content is run again.</li>
+                                    </ul>
+                                    <div className="mt-3">
+                                        <label className="block text-xs font-semibold text-red-900/90 mb-1">
+                                            Type CLEAR to confirm
+                                        </label>
+                                        <input
+                                            value={clearKbConfirmText}
+                                            onChange={(e) => setClearKbConfirmText(e.target.value)}
+                                            className="w-full bg-white border border-red-200 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="CLEAR"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between items-center">
+                                {isClearKbConfirmOpen ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsClearKbConfirmOpen(false);
+                                                setClearKbConfirmText("");
+                                            }}
+                                            className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearKb}
+                                            disabled={isClearingKb || clearKbConfirmText.trim().toUpperCase() !== "CLEAR"}
+                                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                                                isClearingKb || clearKbConfirmText.trim().toUpperCase() !== "CLEAR"
+                                                    ? 'bg-red-50 border-red-200 text-red-300 cursor-not-allowed'
+                                                    : 'bg-white border-red-300 text-red-600 hover:bg-red-50'
+                                            }`}
+                                        >
+                                            {isClearingKb ? 'Clearing...' : 'Confirm Clear'}
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={downloadKbCsv}
+                                            disabled={!kbData || !kbData.sources || kbData.sources.length === 0}
+                                            className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                        >
+                                            Download CSV
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsClearKbConfirmOpen(true);
+                                                setClearKbConfirmText("");
+                                            }}
+                                            className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors bg-white border-red-300 text-red-600 hover:bg-red-50"
+                                        >
+                                            Clear Knowledge Base
+                                        </button>
+                                        <button
+                                            onClick={closeKbModal}
+                                            className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                        >
+                                            Close
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

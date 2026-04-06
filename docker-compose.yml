@@ -6,7 +6,8 @@ services:
       - "8000:8000"
     environment:
       - MOODLE_URL=http://moodle:80
-      - MOODLE_TOKEN=f138f3289380e916e6ac7e6ba3aafc47
+      - MOODLE_PUBLIC_URL=http://localhost:8080
+      - MOODLE_TOKEN=${MOODLE_TOKEN}
       - LLM_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434

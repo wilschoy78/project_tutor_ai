@@ -1,5 +1,9 @@
 import re
 import io
+from urllib.parse import urlparse
+from datetime import datetime
+import hashlib
+import math
 try:
     from pypdf import PdfReader
 except ImportError:
@@ -16,6 +20,7 @@ from typing import List, Dict, Any, Optional
 from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_community.embeddings import FastEmbedEmbeddings # Lightweight CPU embeddings
+from langchain_core.embeddings import Embeddings
 try:
     from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
 except ImportError:
@@ -35,6 +40,30 @@ from langchain.prompts import PromptTemplate
 from app.core.config import settings
 from app.services.moodle_client import moodle_client
 from app.services.student_service import student_service
+
+class HashEmbeddings(Embeddings):
+    def __init__(self, dim: int = 384):
+        self.dim = dim
+
+    def _embed(self, text: str) -> List[float]:
+        base = hashlib.sha256(text.encode("utf-8", errors="ignore")).digest()
+        vec: List[float] = []
+        counter = 0
+        while len(vec) < self.dim:
+            h = hashlib.sha256(base + counter.to_bytes(4, "little")).digest()
+            for b in h:
+                vec.append((b / 127.5) - 1.0)
+                if len(vec) >= self.dim:
+                    break
+            counter += 1
+        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+        return [x / norm for x in vec]
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return [self._embed(t or "") for t in texts]
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed(text or "")
 
 class RAGService:
     def __init__(self):
@@ -62,9 +91,18 @@ class RAGService:
             # We use FastEmbedEmbeddings which is extremely lightweight and faster than HuggingFace/PyTorch.
             # This allows deployment on 512MB RAM instances (like Render Free Tier).
             
-            self.embeddings = FastEmbedEmbeddings(
-                model_name="BAAI/bge-small-en-v1.5"
-            )
+            try:
+                self.embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+            except Exception as e:
+                print(f"Warning: FastEmbedEmbeddings unavailable: {e}")
+                try:
+                    self.embeddings = OllamaEmbeddings(
+                        base_url=settings.OLLAMA_BASE_URL,
+                        model=settings.MODEL_NAME
+                    )
+                except Exception as e2:
+                    print(f"Warning: OllamaEmbeddings unavailable: {e2}")
+                    self.embeddings = HashEmbeddings()
             
             self.llm = ChatGroq(
                 groq_api_key=settings.GROQ_API_KEY,
@@ -169,6 +207,39 @@ class RAGService:
                     # For now, we rely on the description and any attached files.
                     if "dates" in module:
                         content_text += f"Dates: {module['dates']}\n"
+
+                # Forum provenance (discussion titles + dates) without ingesting post bodies
+                forum_latest_discussion = None
+                forum_latest_discussion_ts = None
+                if mod_type == "forum":
+                    forum_id = module.get("instance") or module.get("instanceid")
+                    try:
+                        forum_id_int = int(forum_id) if forum_id is not None else None
+                    except Exception:
+                        forum_id_int = None
+                    if forum_id_int:
+                        discussions = moodle_client.get_forum_discussions(forum_id_int, per_page=3)
+                        if discussions:
+                            lines = []
+                            for d in discussions:
+                                if not isinstance(d, dict):
+                                    continue
+                                title = str(d.get("name", "")).strip()
+                                ts = d.get("timemodified") or d.get("created")
+                                try:
+                                    ts_int = int(ts) if ts is not None else None
+                                except Exception:
+                                    ts_int = None
+                                date_str = datetime.utcfromtimestamp(ts_int).strftime("%Y-%m-%d") if ts_int else ""
+                                if title and date_str:
+                                    lines.append(f"- {title} ({date_str})")
+                                elif title:
+                                    lines.append(f"- {title}")
+                                if forum_latest_discussion is None and title:
+                                    forum_latest_discussion = title
+                                    forum_latest_discussion_ts = ts_int
+                            if lines:
+                                content_text += "Forum discussions (titles):\n" + "\n".join(lines) + "\n"
                 
                 # 2. Get Page Content (specific to 'page' modname) or generic 'contents'
                 # Moodle returns a list 'contents' for resources/pages
@@ -248,14 +319,33 @@ class RAGService:
                              if item['filename'].lower().endswith(".doc"):
                                  content_text += f"[WARNING: .doc file ({item['filename']}) skipped. Please convert to .docx or PDF for AI ingestion.]\n"
 
+                moodle_path = None
+                module_url = module.get("url")
+                if isinstance(module_url, str) and module_url.strip():
+                    parsed = urlparse(module_url)
+                    if parsed.scheme and parsed.netloc:
+                        moodle_path = parsed.path
+                        if parsed.query:
+                            moodle_path += f"?{parsed.query}"
+                        if parsed.fragment:
+                            moodle_path += f"#{parsed.fragment}"
+                    elif module_url.startswith("/"):
+                        moodle_path = module_url
+
                 doc = Document(
                     page_content=content_text,
                     metadata={
                         "course_id": course_id,
-                        "source": f"{section_name} - {mod_name}",
+                        "source": mod_name,
                         "type": mod_type,
                         "module": mod_name,
-                        "section": section_name
+                        "section": section_name,
+                        "cmid": module.get("id"),
+                        "moodle_path": moodle_path,
+                        "moodle_section_title": section_name,
+                        "moodle_activity_title": mod_name,
+                        "forum_latest_discussion": forum_latest_discussion,
+                        "forum_latest_discussion_ts": forum_latest_discussion_ts,
                     }
                 )
                 documents.append(doc)
@@ -315,6 +405,16 @@ class RAGService:
         - If the student is weak in a topic, provide extra examples.
         - Reference their progress if relevant (e.g., "Recall from Week 1...").
         - If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        - Use only the Course Material above. Do not use outside knowledge.
+        - Write in a structured format for readability:
+          Summary:
+          - 2 to 4 bullets.
+          Details:
+          - 3 to 6 short bullets or short paragraphs.
+          Next step:
+          - 1 bullet that tells the student what to do next in Moodle (what to review or attempt).
+          Source check:
+          - 1 line: "Verify using sources below."
         
         Question: {question}
         Helpful Answer:
@@ -322,13 +422,21 @@ class RAGService:
         
         QA_CHAIN_PROMPT = PromptTemplate.from_template(template)
 
-        # 3. Create Retriever
-        retriever = self.vector_store.as_retriever(
-            search_kwargs={
-                "k": 3,
-                "filter": {"course_id": course_id}
-            }
-        )
+        # 3. Create Retriever with optional week filtering
+        # Chroma metadata filters require a single top-level operator. We use $and/$or when filtering by week.
+        filter_where: Dict[str, Any] = {"course_id": course_id}
+        week_nums = sorted({int(n) for n in re.findall(r"\bweek\s*(\d+)\b", question, flags=re.IGNORECASE) if n.isdigit()})
+        if week_nums:
+            week_contains = [{"section": {"$contains": f"Week {n}"}} for n in week_nums]
+            filter_where = {"$and": [{"course_id": {"$eq": course_id}}, {"$or": week_contains}]}
+            try:
+                test_docs = self.vector_store.similarity_search(question, k=1, filter=filter_where)
+                if not test_docs:
+                    filter_where = {"course_id": course_id}
+            except Exception:
+                filter_where = {"course_id": course_id}
+
+        retriever = self.vector_store.as_retriever(search_kwargs={"k": 6, "filter": filter_where})
         
         # 4. Create QA Chain
         qa_chain = RetrievalQA.from_chain_type(
@@ -341,23 +449,55 @@ class RAGService:
         
         # 5. Execute
         result = qa_chain.invoke({"query": question})
-        
-        return {
-            "answer": result["result"],
-            "sources": [doc.metadata for doc in result["source_documents"]]
-        }
+
+        sources = []
+        for doc in result.get("source_documents", []) or []:
+            meta = getattr(doc, "metadata", None) or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            section = meta.get("moodle_section_title") or meta.get("section")
+            module = meta.get("moodle_activity_title") or meta.get("module") or meta.get("source")
+            type_ = meta.get("type")
+            forum_title = meta.get("forum_latest_discussion")
+            forum_ts = meta.get("forum_latest_discussion_ts")
+            try:
+                forum_ts_int = int(forum_ts) if forum_ts is not None else None
+            except Exception:
+                forum_ts_int = None
+            forum_date = datetime.utcfromtimestamp(forum_ts_int).strftime("%Y-%m-%d") if forum_ts_int else None
+            sources.append(
+                {
+                    "course_id": meta.get("course_id") or course_id,
+                    "section": section,
+                    "module": module,
+                    "source": module,
+                    "type": type_,
+                    "cmid": meta.get("cmid"),
+                    "moodle_path": meta.get("moodle_path"),
+                    "forum_latest_discussion": forum_title,
+                    "forum_latest_discussion_date": forum_date,
+                }
+            )
+
+        return {"answer": result["result"], "sources": sources}
 
     def generate_quiz(self, course_id: int, topic: str):
         """
         Generates a multiple choice question based on the topic and course content.
         """
         # 1. Retrieve content
-        retriever = self.vector_store.as_retriever(
-            search_kwargs={
-                "k": 3,
-                "filter": {"course_id": course_id}
-            }
-        )
+        filter_where: Dict[str, Any] = {"course_id": course_id}
+        week_nums = sorted({int(n) for n in re.findall(r"\bweek\s*(\d+)\b", topic, flags=re.IGNORECASE) if n.isdigit()})
+        if week_nums:
+            week_contains = [{"section": {"$contains": f"Week {n}"}} for n in week_nums]
+            filter_where = {"$and": [{"course_id": {"$eq": course_id}}, {"$or": week_contains}]}
+            try:
+                test_docs = self.vector_store.similarity_search(topic, k=1, filter=filter_where)
+                if not test_docs:
+                    filter_where = {"course_id": course_id}
+            except Exception:
+                filter_where = {"course_id": course_id}
+        retriever = self.vector_store.as_retriever(search_kwargs={"k": 3, "filter": filter_where})
         docs = retriever.invoke(topic)
         context_text = "\n\n".join([doc.page_content for doc in docs])
         context_text = context_text.strip()
@@ -718,6 +858,24 @@ Your Personalized Study Plan:
         """
         Returns a summary of all ingested documents for a course.
         """
+        def _normalize_type_label(raw: Any) -> str:
+            t = str(raw or "").strip().lower()
+            if "forum" in t:
+                return "Forum"
+            if "page" in t:
+                return "Page"
+            if "assign" in t:
+                return "Assignment"
+            if "qbank" in t or "question" in t:
+                return "Qbank"
+            if "quiz" in t:
+                return "Quiz"
+            if t == "url" or "url" in t:
+                return "URL"
+            if t:
+                return t[:1].upper() + t[1:]
+            return "Unknown"
+
         try:
             # Query all documents for this course
             # Note: We use the underlying collection directly for metadata access if possible,
@@ -738,7 +896,7 @@ Your Personalized Study Plan:
             for i, meta in enumerate(result['metadatas']):
                 # Construct a unique key for the source (e.g., "Module Name (Type)")
                 mod_name = meta.get('module', 'Unknown Module')
-                mod_type = meta.get('type', 'unknown')
+                mod_type = _normalize_type_label(meta.get('type', 'unknown'))
                 key = f"{mod_name} ({mod_type})"
                 
                 if key not in sources:
@@ -746,8 +904,14 @@ Your Personalized Study Plan:
                         "name": mod_name,
                         "type": mod_type,
                         "chunks": 0,
-                        "section": meta.get('section', 'Unknown Section')
+                        "section": meta.get('section', 'Unknown Section'),
+                        "cmid": meta.get("cmid"),
+                        "moodle_path": meta.get("moodle_path"),
                     }
+                if sources[key].get("cmid") is None and meta.get("cmid") is not None:
+                    sources[key]["cmid"] = meta.get("cmid")
+                if sources[key].get("moodle_path") in (None, "") and meta.get("moodle_path"):
+                    sources[key]["moodle_path"] = meta.get("moodle_path")
                 sources[key]["chunks"] += 1
                 
             return {

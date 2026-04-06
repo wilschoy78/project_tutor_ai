@@ -344,8 +344,14 @@ def view_knowledge_base(course_id: int, request: Request):
       const toast = document.getElementById("toast");
       const deleteUrl = {html.escape(delete_url)!r};
       clearBtn.addEventListener("click", async () => {{
-        const ok = window.confirm("Clear all ingested knowledge base content for this course?");
-        if (!ok) return;
+        const msg =
+          "This will clear the AI Knowledge Base for this course.\\n\\n" +
+          "- Removes all ingested chunks/sources used for grounded answers\\n" +
+          "- Does NOT change Moodle content or grades\\n" +
+          "- Students may see fewer/no sources until content is refreshed again\\n\\n" +
+          "Type CLEAR to confirm.";
+        const typed = window.prompt(msg, "");
+        if (!typed || typed.trim().toUpperCase() !== "CLEAR") return;
         clearBtn.disabled = true;
         clearBtn.textContent = "Clearing...";
         toast.textContent = "";
