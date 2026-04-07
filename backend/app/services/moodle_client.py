@@ -1,4 +1,6 @@
 import requests
+import time
+import random
 from typing import Dict, Any, List, Optional
 from app.core.config import settings
 
@@ -28,26 +30,46 @@ class MoodleClient:
             **params
         }
         
-        try:
-            headers = {
-                "User-Agent": "TeacherTutorAI/1.0",
-                "Accept": "application/json"
-            }
-            if method.upper() == "GET":
-                response = requests.get(self.rest_endpoint, params=payload, headers=headers)
-            else:
-                response = requests.post(self.rest_endpoint, data=payload, headers=headers)
-                
-            response.raise_for_status()
-            data = response.json()
-            if isinstance(data, dict) and data.get("exception"):
-                errorcode = data.get("errorcode") or "moodle_exception"
-                message = data.get("message") or data.get("exception") or "Moodle API error"
-                raise RuntimeError(f"Moodle API error ({errorcode}): {message}")
-            return data
-        except requests.RequestException as e:
-            print(f"Error calling Moodle API ({method}): {e}")
-            raise
+        headers = {
+            "User-Agent": "TeacherTutorAI/1.0",
+            "Accept": "application/json"
+        }
+
+        max_retries = 4
+        base_delay_s = 1.2
+
+        for attempt in range(max_retries):
+            try:
+                if method.upper() == "GET":
+                    response = requests.get(self.rest_endpoint, params=payload, headers=headers)
+                else:
+                    response = requests.post(self.rest_endpoint, data=payload, headers=headers)
+
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        wait_s = float(retry_after) if retry_after is not None else None
+                    except Exception:
+                        wait_s = None
+                    if wait_s is None:
+                        wait_s = (base_delay_s * (2 ** attempt)) + random.uniform(0, 0.35)
+                    time.sleep(max(0.2, min(wait_s, 20.0)))
+                    continue
+
+                response.raise_for_status()
+                data = response.json()
+                if isinstance(data, dict) and data.get("exception"):
+                    errorcode = data.get("errorcode") or "moodle_exception"
+                    message = data.get("message") or data.get("exception") or "Moodle API error"
+                    raise RuntimeError(f"Moodle API error ({errorcode}): {message}")
+                return data
+            except requests.RequestException as e:
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if attempt < (max_retries - 1) and status in (429, 502, 503, 504):
+                    time.sleep((base_delay_s * (2 ** attempt)) + random.uniform(0, 0.35))
+                    continue
+                print(f"Error calling Moodle API ({method}): {e}")
+                raise
 
     def get_site_info(self) -> Dict[str, Any]:
         """

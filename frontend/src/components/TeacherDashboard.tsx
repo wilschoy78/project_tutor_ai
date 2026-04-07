@@ -658,12 +658,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                 normalizedDetail.toLowerCase().includes("invalidtoken") ||
                 normalizedDetail.toLowerCase().includes("invalid token") ||
                 normalizedDetail.toLowerCase().includes("token not found");
+            const isRateLimited =
+                normalizedDetail.includes("429") ||
+                normalizedDetail.toLowerCase().includes("too many requests");
             setToast({
                 tone: 'error',
                 message: isTokenMissing
                     ? "Sync failed: Moodle token is missing. Set MOODLE_TOKEN in your .env and restart the backend."
                     : isTokenInvalid
                         ? "Sync failed: Moodle token is invalid/expired. Generate a new Moodle Web Services token, update MOODLE_TOKEN, then restart the backend."
+                        : isRateLimited
+                            ? "Sync failed: Moodle rate limit reached (429). Wait 30–60 seconds, then click Retry. Tip: ask students to run Sync My Progress first to reduce Moodle calls."
                     : `Sync failed: ${normalizedDetail}. Click Retry to try again.`
             });
             setLastAnalyticsDetails(null);

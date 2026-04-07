@@ -154,6 +154,15 @@ class StudentService:
         cache_file = os.path.join(PROGRESS_DIR, f"progress_{student_id}_{course_id}.json")
         cached_data = self._load_json_file(cache_file)
         if cached_data:
+            last_synced = cached_data.get("last_synced")
+            try:
+                last_synced_ts = float(last_synced)
+            except Exception:
+                last_synced_ts = None
+            if last_synced_ts is not None:
+                max_age_s = 15 * 60
+                if (time.time() - last_synced_ts) <= max_age_s:
+                    return cached_data
             return cached_data
             
         return self.sync_student_progress(student_id, course_id)
@@ -208,7 +217,7 @@ class StudentService:
             progress_data = {
                 "completed_modules": [], # TODO: Use core_completion_get_course_completion_status
                 "quiz_scores": quiz_scores,
-                "last_synced": "now" # In real app use timestamp
+                "last_synced": time.time()
             }
             
             # Save to cache
@@ -335,8 +344,7 @@ class StudentService:
                 fullname = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip()
 
                 profile = self.get_student_profile(uid)
-                # Force sync individual progress as well
-                progress = self.sync_student_progress(uid, course_id)
+                progress = self.get_student_progress(uid, course_id)
 
                 quiz_scores_dict = progress.get("quiz_scores", {}) or {}
                 student_scores = list(quiz_scores_dict.values())
