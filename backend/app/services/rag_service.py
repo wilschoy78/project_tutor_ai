@@ -123,9 +123,9 @@ class RAGService:
             )
         
         # Initialize Vector Store (ChromaDB)
-        # Persistent storage in ./chroma_db
+        # Persistent storage directory is configurable for deployments (e.g., Render disk mount)
         self.vector_store = Chroma(
-            persist_directory="./chroma_db",
+            persist_directory=settings.CHROMA_PERSIST_DIR,
             embedding_function=self.embeddings,
             collection_name="moodle_content"
         )

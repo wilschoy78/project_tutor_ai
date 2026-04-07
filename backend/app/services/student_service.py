@@ -5,9 +5,10 @@ import re
 import time
 from typing import Dict, Any, List
 from app.services.moodle_client import moodle_client
+from app.core.config import settings
 
 # Define data directories
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+DATA_DIR = settings.APP_DATA_DIR
 ANALYTICS_DIR = os.path.join(DATA_DIR, "analytics")
 PROGRESS_DIR = os.path.join(DATA_DIR, "progress")
 
@@ -299,26 +300,27 @@ class StudentService:
         """
         Forces a refresh of course analytics from Moodle and caches the result.
         """
-        try:
-            print(f"Syncing analytics for course {course_id}...")
-            # 1. Get Enrolled Users and filter out non-students (e.g., teachers/admins)
-            enrolled_users = moodle_client._call_moodle("core_enrol_get_enrolled_users", {"courseid": course_id})
+        print(f"Syncing analytics for course {course_id}...")
+        enrolled_users = moodle_client._call_moodle("core_enrol_get_enrolled_users", {"courseid": course_id})
+        if not isinstance(enrolled_users, list):
+            raise RuntimeError("Unexpected Moodle response for enrolled users (expected a list). Check MOODLE_URL/MOODLE_TOKEN.")
 
-            filtered_users = []
-            for user in enrolled_users:
-                roles = user.get("roles") or []
-                role_shortnames = {
-                    str(r.get("shortname", "")).lower()
-                    for r in roles
-                    if isinstance(r, dict)
-                }
-                # Treat typical teaching/admin roles as non-students
-                if role_shortnames and any(
-                    r in {"editingteacher", "teacher", "manager", "admin", "coursecreator"}
-                    for r in role_shortnames
-                ):
-                    continue
-                filtered_users.append(user)
+        filtered_users = []
+        for user in enrolled_users:
+            if not isinstance(user, dict):
+                continue
+            roles = user.get("roles") or []
+            role_shortnames = {
+                str(r.get("shortname", "")).lower()
+                for r in roles
+                if isinstance(r, dict)
+            }
+            if role_shortnames and any(
+                r in {"editingteacher", "teacher", "manager", "admin", "coursecreator"}
+                for r in role_shortnames
+            ):
+                continue
+            filtered_users.append(user)
 
             total_students = len(filtered_users)
             active_students = 0 # Placeholder logic
@@ -471,16 +473,7 @@ class StudentService:
             cache_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
             self._save_json_file(cache_file, analytics_data)
             
-            return analytics_data
-            
-        except Exception as e:
-            print(f"Error fetching course analytics: {e}")
-            return {
-                "total_students": 0,
-                "active_students": 0,
-                "average_score": 0,
-                "students": []
-            }
+        return analytics_data
 
     def get_course_analytics(self, course_id: int) -> Dict[str, Any]:
         """

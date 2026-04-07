@@ -2,6 +2,7 @@ import sqlite3
 import threading
 from datetime import datetime
 from typing import List, Dict, Any
+from app.core.config import settings
 
 
 class ConversationService:
@@ -74,5 +75,4 @@ class ConversationService:
         ]
 
 
-conversation_service = ConversationService()
-
+conversation_service = ConversationService(db_path=settings.CHAT_DB_PATH)

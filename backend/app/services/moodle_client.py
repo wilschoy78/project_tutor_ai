@@ -16,9 +16,13 @@ class MoodleClient:
         """
         if params is None:
             params = {}
+
+        token = settings.MOODLE_TOKEN
+        if not token:
+            raise RuntimeError("MOODLE_TOKEN is not configured. Set MOODLE_TOKEN in the backend environment to enable Moodle sync.")
             
         payload = {
-            "wstoken": self.token,
+            "wstoken": token,
             "wsfunction": function_name,
             "moodlewsrestformat": "json",
             **params
@@ -35,7 +39,12 @@ class MoodleClient:
                 response = requests.post(self.rest_endpoint, data=payload, headers=headers)
                 
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            if isinstance(data, dict) and data.get("exception"):
+                errorcode = data.get("errorcode") or "moodle_exception"
+                message = data.get("message") or data.get("exception") or "Moodle API error"
+                raise RuntimeError(f"Moodle API error ({errorcode}): {message}")
+            return data
         except requests.RequestException as e:
             print(f"Error calling Moodle API ({method}): {e}")
             raise

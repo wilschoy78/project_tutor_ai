@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion, HelpCircle, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion, HelpCircle, Maximize2, ChevronLeft, ChevronRight, MessageSquareText } from 'lucide-react';
 import {
     api,
     dashboardApi,
@@ -108,6 +108,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         url: true,
         assignment: true,
     });
+
+    const [isChatLogOpen, setIsChatLogOpen] = useState(false);
+    const [chatLogAdminToken, setChatLogAdminToken] = useState("");
+    const [chatLogStudentId, setChatLogStudentId] = useState<number | null>(null);
+    const [chatLogLimit, setChatLogLimit] = useState(200);
+    const [chatLogRows, setChatLogRows] = useState<Array<{ id: number; role: 'user' | 'assistant'; content: string; created_at: string }>>([]);
+    const [chatLogError, setChatLogError] = useState<string | null>(null);
+    const [isChatLogLoading, setIsChatLogLoading] = useState(false);
+    const [chatLogSearch, setChatLogSearch] = useState("");
+    const [chatLogRoleFilter, setChatLogRoleFilter] = useState<"" | "user" | "assistant">("");
 
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [profileStudent, setProfileStudent] = useState<{ id: number; name: string } | null>(null);
@@ -640,8 +650,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             console.error("Failed to sync analytics:", error);
             const err = error as { response?: { data?: { detail?: string } }; message?: string };
             const detail = err.response?.data?.detail || err.message || "Unknown error";
-            alert(`Failed to sync analytics: ${detail}`);
-            setToast({ tone: 'error', message: `Sync failed: ${detail}. Click Retry to try again.` });
+            const normalizedDetail = String(detail || "");
+            const isTokenMissing =
+                normalizedDetail.toLowerCase().includes("moodle_token") &&
+                normalizedDetail.toLowerCase().includes("not configured");
+            const isTokenInvalid =
+                normalizedDetail.toLowerCase().includes("invalidtoken") ||
+                normalizedDetail.toLowerCase().includes("invalid token") ||
+                normalizedDetail.toLowerCase().includes("token not found");
+            setToast({
+                tone: 'error',
+                message: isTokenMissing
+                    ? "Sync failed: Moodle token is missing. Set MOODLE_TOKEN in your .env and restart the backend."
+                    : isTokenInvalid
+                        ? "Sync failed: Moodle token is invalid/expired. Generate a new Moodle Web Services token, update MOODLE_TOKEN, then restart the backend."
+                    : `Sync failed: ${normalizedDetail}. Click Retry to try again.`
+            });
             setLastAnalyticsDetails(null);
             if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
             toastTimerRef.current = window.setTimeout(() => setToast(null), 4000);
@@ -677,6 +701,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         setIsClearKbConfirmOpen(false);
         setClearKbConfirmText("");
         setKbSearch("");
+    };
+
+    const openChatLogs = () => {
+        const firstStudentId = previewStudentId ?? analytics?.students?.[0]?.id ?? null;
+        setChatLogStudentId(firstStudentId);
+        setChatLogRows([]);
+        setChatLogError(null);
+        setChatLogSearch("");
+        setChatLogRoleFilter("");
+        setIsChatLogOpen(true);
+    };
+
+    const closeChatLogs = () => {
+        setIsChatLogOpen(false);
+        setChatLogRows([]);
+        setChatLogError(null);
+        setIsChatLogLoading(false);
+    };
+
+    const loadChatLogs = async () => {
+        if (!chatLogStudentId) {
+            setChatLogError("Select a student to view chat history.");
+            return;
+        }
+        if (!chatLogAdminToken.trim()) {
+            setChatLogError("Enter ADMIN_TOKEN to view chat history.");
+            return;
+        }
+        try {
+            setIsChatLogLoading(true);
+            setChatLogError(null);
+            const rows = await teacherApi.getChatHistoryAdmin(courseId, chatLogStudentId, chatLogAdminToken.trim(), chatLogLimit);
+            setChatLogRows(rows);
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { detail?: string } }; message?: string };
+            const detail = err.response?.data?.detail || err.message || "Failed to load chat history.";
+            setChatLogError(detail);
+        } finally {
+            setIsChatLogLoading(false);
+        }
     };
 
     const handleClearKb = async () => {
@@ -932,6 +996,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         >
                             <BookOpen className="w-4 h-4" />
                             View Knowledge Base
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={openChatLogs}
+                            className={cn(actionButtonClass("secondary"), "!w-auto flex-shrink-0")}
+                            title="View persisted chat history (SQLite) for a student and course."
+                        >
+                            <MessageSquareText className="w-4 h-4" />
+                            View Chat Logs
                         </button>
 
                         <button
@@ -1410,6 +1484,53 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                           </div>
                         </div>
 
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-gray-900">Data</h2>
+                                    <p className="text-sm text-gray-500">Single-click links for the panel demo (KB + chat database)</p>
+                                </div>
+                                <div className="text-xs text-gray-500 text-right">
+                                    <div>KB: ChromaDB (persisted)</div>
+                                    <div>Chat: SQLite (persisted)</div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleViewKb}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50"
+                                >
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                                        <BookOpen className="w-4 h-4 text-indigo-600" />
+                                        View Knowledge Base
+                                    </span>
+                                    <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
+                                        Open
+                                    </span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={openChatLogs}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50"
+                                >
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                                        <MessageSquareText className="w-4 h-4 text-indigo-600" />
+                                        View Chat Logs
+                                    </span>
+                                    <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
+                                        Open
+                                    </span>
+                                </button>
+                            </div>
+
+                            <div className="mt-3 text-xs text-gray-500">
+                                Suggested demo flow: Refresh Content → View Knowledge Base → Student asks question → View Chat Logs (stored messages).
+                            </div>
+                        </div>
+
                         {/* Top Weaknesses */}
                         {analytics.top_weaknesses && analytics.top_weaknesses.length > 0 && (
                             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -1799,6 +1920,193 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end">
                             <button 
                                 onClick={closeModal}
+                                className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isChatLogOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-xl">
+                        <div className="flex justify-between items-center p-6 border-b border-gray-100">
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Chat History</h3>
+                                <p className="text-sm text-gray-500">Read-only view of persisted messages (SQLite)</p>
+                                <p className="text-xs text-gray-400 mt-1">Course ID: {courseId}</p>
+                            </div>
+                            <button
+                                onClick={closeChatLogs}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto space-y-4">
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-900">
+                                This view requires ADMIN_TOKEN configured on the backend. Do not share the token publicly.
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-gray-700">ADMIN_TOKEN</label>
+                                    <input
+                                        type="password"
+                                        value={chatLogAdminToken}
+                                        onChange={(e) => setChatLogAdminToken(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        placeholder="Enter admin token"
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-gray-700">Student</label>
+                                    <select
+                                        value={chatLogStudentId ?? ""}
+                                        onChange={(e) => setChatLogStudentId(e.target.value ? Number(e.target.value) : null)}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    >
+                                        <option value="">Select a student</option>
+                                        {(analytics?.students || []).map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name} (ID: {s.id})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-gray-700">Limit</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={500}
+                                        value={chatLogLimit}
+                                        onChange={(e) => setChatLogLimit(Math.max(1, Math.min(500, Number(e.target.value) || 200)))}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-gray-700">Role</label>
+                                    <select
+                                        value={chatLogRoleFilter}
+                                        onChange={(e) => setChatLogRoleFilter(e.target.value as typeof chatLogRoleFilter)}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    >
+                                        <option value="">All</option>
+                                        <option value="user">User</option>
+                                        <option value="assistant">Assistant</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-gray-700">Search</label>
+                                    <input
+                                        type="text"
+                                        value={chatLogSearch}
+                                        onChange={(e) => setChatLogSearch(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        placeholder="Search message text"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={loadChatLogs}
+                                    disabled={isChatLogLoading}
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center gap-2"
+                                >
+                                    {isChatLogLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareText className="w-4 h-4" />}
+                                    Load
+                                </button>
+                                {chatLogStudentId && chatLogAdminToken.trim() && (
+                                    <a
+                                        href={`${api.defaults.baseURL || ""}/ai/chat/history/view?course_id=${encodeURIComponent(String(courseId))}&student_id=${encodeURIComponent(String(chatLogStudentId))}&limit=${encodeURIComponent(String(chatLogLimit))}&admin_token=${encodeURIComponent(chatLogAdminToken.trim())}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs font-semibold text-blue-700 underline underline-offset-2"
+                                    >
+                                        Open full view
+                                    </a>
+                                )}
+                                <div className="ml-auto text-xs text-gray-500">
+                                    {(() => {
+                                        const q = chatLogSearch.trim().toLowerCase();
+                                        const filtered = chatLogRows.filter((r) => {
+                                            if (chatLogRoleFilter && r.role !== chatLogRoleFilter) return false;
+                                            if (!q) return true;
+                                            return String(r.content || "").toLowerCase().includes(q);
+                                        });
+                                        return `Showing ${filtered.length} of ${chatLogRows.length}`;
+                                    })()}
+                                </div>
+                            </div>
+
+                            {chatLogError && (
+                                <div className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                    {chatLogError}
+                                </div>
+                            )}
+
+                            <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr>
+                                            <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 w-24">Role</th>
+                                            <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600">Content</th>
+                                            <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 w-44">Timestamp</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {(() => {
+                                            const q = chatLogSearch.trim().toLowerCase();
+                                            const filtered = chatLogRows.filter((r) => {
+                                                if (chatLogRoleFilter && r.role !== chatLogRoleFilter) return false;
+                                                if (!q) return true;
+                                                return String(r.content || "").toLowerCase().includes(q);
+                                            });
+                                            if (filtered.length === 0) {
+                                                return (
+                                                    <tr>
+                                                        <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                                                            No messages to show.
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }
+                                            return filtered.map((r) => {
+                                                const text = String(r.content || "");
+                                                const preview = text.length > 280 ? `${text.slice(0, 280)}…` : text;
+                                                return (
+                                                    <tr key={r.id} className="hover:bg-gray-50">
+                                                        <td className="px-4 py-3 text-xs font-semibold text-gray-700 capitalize">
+                                                            {r.role}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-gray-800 whitespace-pre-wrap align-top">
+                                                            {preview}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs text-gray-500 align-top">
+                                                            {new Date(r.created_at).toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            });
+                                        })()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end">
+                            <button
+                                onClick={closeChatLogs}
                                 className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                             >
                                 Close

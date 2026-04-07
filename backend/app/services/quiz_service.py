@@ -5,8 +5,9 @@ import time
 import uuid
 from typing import List, Dict, Any, Optional
 from app.services.rag_service import rag_service
+from app.core.config import settings
 
-QUIZ_DATA_DIR = "data/quizzes"
+QUIZ_DATA_DIR = settings.QUIZ_DATA_DIR
 
 class QuizService:
     def __init__(self):

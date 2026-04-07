@@ -11,6 +11,7 @@ services:
     environment:
       - MOODLE_URL=https://bcccs.octanity.net/lms
       - MOODLE_TOKEN=${MOODLE_TOKEN}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
       
       # Use Groq for fast inference
       - LLM_PROVIDER=groq

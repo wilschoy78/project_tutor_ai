@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import html
+import json
 from app.services.rag_service import rag_service
 from app.services.student_service import student_service
 from app.services.conversation_service import conversation_service
@@ -526,6 +527,110 @@ def get_chat_history(course_id: int, student_id: int, limit: int = 50):
     try:
         history = conversation_service.get_history(course_id, student_id, limit=limit)
         return history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chat/history/admin", response_model=List[ChatHistoryMessage])
+def get_chat_history_admin(course_id: int, student_id: int, limit: int = 200, admin_token: Optional[str] = None):
+    if not settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="ADMIN_TOKEN is not configured")
+    if admin_token != settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+    try:
+        history = conversation_service.get_history(course_id, student_id, limit=limit)
+        return history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chat/history/view", response_class=HTMLResponse)
+def view_chat_history(course_id: int, student_id: int, request: Request, limit: int = 200, admin_token: Optional[str] = None):
+    if not settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="ADMIN_TOKEN is not configured")
+    if admin_token != settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+    try:
+        history = conversation_service.get_history(course_id, student_id, limit=limit)
+
+        root_path = request.scope.get("root_path") or ""
+        api_prefix = f"{root_path}{settings.API_V1_STR}"
+        json_url = f"{api_prefix}/ai/chat/history?course_id={course_id}&student_id={student_id}&limit={limit}"
+        kb_url = f"{api_prefix}/ai/knowledge-base/{course_id}/view"
+        home_url = f"{root_path}/"
+
+        rows = []
+        for m in history:
+            if not isinstance(m, dict):
+                continue
+            role = html.escape(str(m.get("role", "")))
+            created = html.escape(str(m.get("created_at", "")))
+            raw_content = str(m.get("content", ""))
+            preview = raw_content.strip()
+            preview = preview.replace("\n", " ")
+            if len(preview) > 220:
+                preview = preview[:220] + "…"
+            preview_html = html.escape(preview)
+            try:
+                parsed = json.loads(raw_content)
+                if isinstance(parsed, dict) and parsed.get("type") == "quiz":
+                    preview_html = "<span class='pill'>quiz</span> " + preview_html
+            except Exception:
+                void = 0
+            rows.append(
+                f"<tr>"
+                f"<td class='td role'>{role}</td>"
+                f"<td class='td content'>{preview_html}</td>"
+                f"<td class='td ts'>{created}</td>"
+                f"</tr>"
+            )
+
+        html_content = f"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chat History</title>
+    <style>
+      body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:#f6f7fb; margin:0; padding:0; }}
+      .wrap {{ max-width: 1050px; margin: 28px auto; padding: 0 16px; }}
+      .card {{ background:#fff; border:1px solid #e5e7eb; border-radius:16px; box-shadow: 0 6px 22px rgba(0,0,0,.06); overflow:hidden; }}
+      .header {{ display:flex; justify-content:space-between; align-items:center; padding:16px 18px; border-bottom:1px solid #eef0f3; }}
+      .title {{ font-weight:800; font-size:18px; color:#111827; }}
+      .subtitle {{ margin-top:4px; font-size:12px; color:#6b7280; }}
+      .links {{ display:flex; gap:10px; }}
+      .link {{ font-size:12px; color:#1d4ed8; text-decoration:underline; text-underline-offset:2px; font-weight:700; }}
+      table {{ width:100%; border-collapse:collapse; }}
+      th {{ text-align:left; font-size:12px; color:#6b7280; padding:10px 14px; background:#fafafa; border-bottom:1px solid #eef0f3; }}
+      td {{ padding:12px 14px; border-bottom:1px solid #f1f5f9; vertical-align:top; font-size:13px; color:#111827; }}
+      .role {{ width: 90px; color:#374151; font-weight:800; text-transform:capitalize; }}
+      .ts {{ width: 240px; color:#6b7280; font-size:12px; }}
+      .pill {{ display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; background:#ede9fe; color:#5b21b6; font-size:11px; font-weight:800; margin-right:6px; }}
+      .empty {{ padding:24px; color:#6b7280; }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="header">
+          <div>
+            <div class="title">Chat History</div>
+            <div class="subtitle">Course ID: {course_id} • Student ID: {student_id} • Showing up to {limit} messages</div>
+          </div>
+          <div class="links">
+            <a class="link" href="{json_url}">View JSON</a>
+            <a class="link" href="{kb_url}">View Knowledge Base</a>
+            <a class="link" href="{home_url}">Back to App</a>
+          </div>
+        </div>
+        {("<table><thead><tr><th>Role</th><th>Content (preview)</th><th>Timestamp (UTC)</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>") if len(rows) > 0 else "<div class='empty'>No messages found for this course/student.</div>"}
+      </div>
+    </div>
+  </body>
+</html>
+"""
+        return HTMLResponse(html_content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

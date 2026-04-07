@@ -240,5 +240,12 @@ export const teacherApi = {
     rejectQuiz: async (courseId: number, quizId: string) => {
         const response = await api.post(`/ai/quizzes/${quizId}/reject`, null, { params: { course_id: courseId } });
         return response.data;
-    }
+    },
+    getChatHistoryAdmin: async (courseId: number, studentId: number, adminToken: string, limit: number = 200) => {
+        const response = await api.get<Array<{ id: number; role: 'user' | 'assistant'; content: string; created_at: string }>>(
+            '/ai/chat/history/admin',
+            { params: { course_id: courseId, student_id: studentId, limit, admin_token: adminToken } }
+        );
+        return response.data;
+    },
 };

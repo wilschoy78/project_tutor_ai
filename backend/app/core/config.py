@@ -19,11 +19,16 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "mistral"
 
     CHROMA_PERSIST_DIR: str = "./chroma_db"
+    CHAT_DB_PATH: str = "./chat_history.db"
+    QUIZ_DATA_DIR: str = "data/quizzes"
+    APP_DATA_DIR: str = "./app/data"
     INGEST_EMBED_BATCH_SIZE: int = 32
     MAX_INGEST_FILE_BYTES: int = 8_000_000
     MAX_PDF_PAGES: int = 10
     MAX_DOCX_CHARS: int = 120_000
     MAX_MODULE_TEXT_CHARS: int = 200_000
+
+    ADMIN_TOKEN: Optional[str] = None
 
     class Config:
         env_file = ".env"
