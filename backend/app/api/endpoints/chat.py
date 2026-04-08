@@ -482,7 +482,6 @@ def chat(request: ChatRequest):
             # So we need to encode it in the answer in a way the frontend can parse, OR rely on the frontend parsing "I've generated a quiz..."
             
             # Return a special marker for immediate rendering, but store structured JSON in history
-            import json
             quiz_json = json.dumps(quiz_data)
             history_payload = json.dumps(
                 {
@@ -522,7 +521,8 @@ def chat(request: ChatRequest):
                 }
             )
             conversation_service.add_message(request.course_id, request.student_id, "assistant", history_payload)
-        except Exception:
+        except Exception as e:
+            print(f"Failed to persist chat sources to history: {e}")
             conversation_service.add_message(request.course_id, request.student_id, "assistant", result.get("answer", ""))
         return result
     except Exception as e:

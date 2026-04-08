@@ -451,6 +451,21 @@ class RAGService:
         result = qa_chain.invoke({"query": question})
 
         sources = []
+        def _safe_scalar(v: Any) -> Any:
+            if v is None:
+                return None
+            if isinstance(v, (str, int, float, bool)):
+                return v
+            item = getattr(v, "item", None)
+            if callable(item):
+                try:
+                    vv = item()
+                    if isinstance(vv, (str, int, float, bool)) or vv is None:
+                        return vv
+                except Exception:
+                    pass
+            return str(v)
+
         for doc in result.get("source_documents", []) or []:
             meta = getattr(doc, "metadata", None) or {}
             if not isinstance(meta, dict):
@@ -467,15 +482,15 @@ class RAGService:
             forum_date = datetime.utcfromtimestamp(forum_ts_int).strftime("%Y-%m-%d") if forum_ts_int else None
             sources.append(
                 {
-                    "course_id": meta.get("course_id") or course_id,
-                    "section": section,
-                    "module": module,
-                    "source": module,
-                    "type": type_,
-                    "cmid": meta.get("cmid"),
-                    "moodle_path": meta.get("moodle_path"),
-                    "forum_latest_discussion": forum_title,
-                    "forum_latest_discussion_date": forum_date,
+                    "course_id": _safe_scalar(meta.get("course_id") or course_id),
+                    "section": _safe_scalar(section),
+                    "module": _safe_scalar(module),
+                    "source": _safe_scalar(module),
+                    "type": _safe_scalar(type_),
+                    "cmid": _safe_scalar(meta.get("cmid")),
+                    "moodle_path": _safe_scalar(meta.get("moodle_path")),
+                    "forum_latest_discussion": _safe_scalar(forum_title),
+                    "forum_latest_discussion_date": _safe_scalar(forum_date),
                 }
             )
 

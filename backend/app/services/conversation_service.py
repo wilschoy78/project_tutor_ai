@@ -58,13 +58,13 @@ class ConversationService:
                     SELECT id, role, content, created_at
                     FROM messages
                     WHERE course_id = ? AND student_id = ?
-                    ORDER BY created_at ASC
+                    ORDER BY created_at DESC
                     LIMIT ?
                     """,
                     (course_id, student_id, limit),
                 )
                 rows = cursor.fetchall()
-        return [
+        items = [
             {
                 "id": row["id"],
                 "role": row["role"],
@@ -73,6 +73,8 @@ class ConversationService:
             }
             for row in rows
         ]
+        items.reverse()
+        return items
 
 
 conversation_service = ConversationService(db_path=settings.CHAT_DB_PATH)
