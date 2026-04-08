@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw, MessageSquareText, Link as LinkIcon, FileText, ClipboardList, HelpCircle, Database, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw, MessageSquareText, Link as LinkIcon, FileText, ClipboardList, HelpCircle, Database, Maximize2, ChevronLeft, ChevronRight, FileQuestion } from 'lucide-react';
 import { api, chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
 import { actionButtonClass, cn } from '../lib/utils';
 import { SimpleMarkdown } from "./SimpleMarkdown";
@@ -1482,6 +1482,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
             >
                 <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
                 {isSyncing && syncProgressPercent !== null ? `Syncing… ${syncProgressPercent}%` : (isSyncing ? "Syncing…" : "Sync My Progress")}
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const base = api.defaults.baseURL || "/api/v1";
+                    const url = `${base}/dashboard/students/${encodeURIComponent(String(activeStudentId))}/report?course_id=${encodeURIComponent(String(activeCourseId))}`;
+                    window.open(url, "_blank", "noopener,noreferrer");
+                }}
+                disabled={isLoading || isSyncing}
+                className={cn(actionButtonClass("secondary"), "!w-auto flex-shrink-0")}
+                title="Open a printable progress report (save as PDF)."
+            >
+                <FileQuestion className="w-4 h-4" />
+                Print Report
             </button>
             <button 
                 onClick={() => handleGenerateQuiz()}

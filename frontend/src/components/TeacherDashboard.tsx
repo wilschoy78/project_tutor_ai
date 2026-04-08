@@ -539,6 +539,60 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         return filtered;
     }, [analytics, studentSearch, studentRiskFilter, studentLearningStyleFilter, studentSort]);
 
+    const exportStudentsCsv = () => {
+        const rows = studentsForTable;
+        const header = [
+            "student_id",
+            "student_name",
+            "learning_style",
+            "avg_score",
+            "risk_level",
+            "quizzes_taken",
+            "ai_quizzes_taken",
+        ];
+        const escapeCsv = (value: unknown) => {
+            const s = String(value ?? "");
+            const escaped = s.replace(/"/g, '""');
+            return `"${escaped}"`;
+        };
+        const lines = [
+            header.join(","),
+            ...rows.map((s) =>
+                [
+                    escapeCsv(s.id),
+                    escapeCsv(s.name),
+                    escapeCsv(s.learning_style),
+                    escapeCsv(s.avg_score),
+                    escapeCsv(s.risk_level || ""),
+                    escapeCsv(s.quizzes_taken ?? ""),
+                    escapeCsv(s.ai_quizzes_taken ?? ""),
+                ].join(",")
+            ),
+        ];
+        const csv = lines.join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `course_${courseId}_students.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const openClassPrintPreview = () => {
+        const base = api.defaults.baseURL || "/api/v1";
+        const url = `${base}/dashboard/analytics/${courseId}/print`;
+        window.open(url, "_blank", "noopener,noreferrer");
+    };
+
+    const openStudentPrintPreview = (studentId: number) => {
+        const base = api.defaults.baseURL || "/api/v1";
+        const url = `${base}/dashboard/students/${encodeURIComponent(String(studentId))}/report?course_id=${encodeURIComponent(String(courseId))}`;
+        window.open(url, "_blank", "noopener,noreferrer");
+    };
+
     const handleApproveQuiz = async (quizId: string) => {
         try {
             await teacherApi.approveQuiz(courseId, quizId);
@@ -1692,6 +1746,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                             placeholder="Search name or ID…"
                                             className="w-full sm:w-52 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                                         />
+                                        <button
+                                            type="button"
+                                            onClick={openClassPrintPreview}
+                                            className="w-full sm:w-auto px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-800 bg-white hover:bg-gray-50"
+                                        >
+                                            Print Preview
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={exportStudentsCsv}
+                                            className="w-full sm:w-auto px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-800 bg-white hover:bg-gray-50"
+                                        >
+                                            Export CSV
+                                        </button>
                                         <select
                                             value={studentRiskFilter}
                                             onChange={(e) => setStudentRiskFilter(e.target.value as typeof studentRiskFilter)}
@@ -1871,6 +1939,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                         className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                                                     >
                                                         View Plan
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openStudentPrintPreview(student.id)}
+                                                        className="ml-4 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                                                    >
+                                                        Report
                                                     </button>
                                                     {student.risk_level === 'no_data' && (
                                                         <button
