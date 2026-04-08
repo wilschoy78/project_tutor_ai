@@ -140,6 +140,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [pendingQuizTopicFilter, setPendingQuizTopicFilter] = useState<string>("");
     const [pendingQuizSort, setPendingQuizSort] = useState<"newest" | "oldest" | "topic_az" | "topic_za">("newest");
 
+    const [studentSearch, setStudentSearch] = useState("");
+    const [studentRiskFilter, setStudentRiskFilter] = useState<"" | "at_risk" | "needs_support" | "on_track" | "no_data">("");
+    const [studentLearningStyleFilter, setStudentLearningStyleFilter] = useState<string>("");
+    const [studentSort, setStudentSort] = useState<
+        "name_az" | "name_za" | "score_high" | "score_low" | "risk_high" | "risk_low"
+    >("risk_high");
+
     useEffect(() => {
         if (initialCourseId) {
             setCourseId(initialCourseId);
@@ -470,6 +477,67 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             setPreviewStudentId(firstStudentId);
         }
     }, [analytics, previewStudentId]);
+
+    const learningStyleOptions = React.useMemo(() => {
+        const list = analytics?.students || [];
+        const styles = Array.from(new Set(list.map((s) => String(s.learning_style || "General"))));
+        styles.sort((a, b) => a.localeCompare(b));
+        return styles;
+    }, [analytics]);
+
+    const studentsForTable = React.useMemo(() => {
+        const list = analytics?.students ? [...analytics.students] : [];
+        const q = studentSearch.trim().toLowerCase();
+
+        const getRisk = (s: StudentAnalytics) => {
+            if (s.risk_level) return s.risk_level;
+            const score = Number(s.avg_score) || 0;
+            if (score >= 80) return "on_track";
+            if (score >= 50) return "needs_support";
+            return "at_risk";
+        };
+
+        const riskRank: Record<string, number> = {
+            at_risk: 4,
+            needs_support: 3,
+            on_track: 2,
+            no_data: 1,
+        };
+
+        const filtered = list.filter((s) => {
+            if (q) {
+                const hay = `${String(s.name || "")} ${String(s.id || "")}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            if (studentRiskFilter) {
+                if (getRisk(s) !== studentRiskFilter) return false;
+            }
+            if (studentLearningStyleFilter) {
+                if (String(s.learning_style || "General") !== studentLearningStyleFilter) return false;
+            }
+            return true;
+        });
+
+        filtered.sort((a, b) => {
+            const aName = String(a.name || "").toLowerCase();
+            const bName = String(b.name || "").toLowerCase();
+            const aScore = Number(a.avg_score) || 0;
+            const bScore = Number(b.avg_score) || 0;
+            const aRisk = getRisk(a);
+            const bRisk = getRisk(b);
+            const aRiskRank = riskRank[aRisk] || 0;
+            const bRiskRank = riskRank[bRisk] || 0;
+
+            if (studentSort === "name_az") return aName.localeCompare(bName);
+            if (studentSort === "name_za") return bName.localeCompare(aName);
+            if (studentSort === "score_high") return bScore - aScore;
+            if (studentSort === "score_low") return aScore - bScore;
+            if (studentSort === "risk_low") return aRiskRank - bRiskRank || aName.localeCompare(bName);
+            return bRiskRank - aRiskRank || aName.localeCompare(bName);
+        });
+
+        return filtered;
+    }, [analytics, studentSearch, studentRiskFilter, studentLearningStyleFilter, studentSort]);
 
     const handleApproveQuiz = async (quizId: string) => {
         try {
@@ -1610,7 +1678,69 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         {/* Student List */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             <div className="p-6 border-b border-gray-200">
-                                <h2 className="text-lg font-bold text-gray-900">Student Performance</h2>
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-gray-900">Student Performance</h2>
+                                        <div className="mt-1 text-xs text-gray-500">
+                                            Showing {studentsForTable.length} of {analytics.students?.length || 0}
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                        <input
+                                            value={studentSearch}
+                                            onChange={(e) => setStudentSearch(e.target.value)}
+                                            placeholder="Search name or ID…"
+                                            className="w-full sm:w-52 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        />
+                                        <select
+                                            value={studentRiskFilter}
+                                            onChange={(e) => setStudentRiskFilter(e.target.value as typeof studentRiskFilter)}
+                                            className="w-full sm:w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        >
+                                            <option value="">All status</option>
+                                            <option value="at_risk">At Risk</option>
+                                            <option value="needs_support">Needs Support</option>
+                                            <option value="on_track">On Track</option>
+                                            <option value="no_data">No Data</option>
+                                        </select>
+                                        <select
+                                            value={studentLearningStyleFilter}
+                                            onChange={(e) => setStudentLearningStyleFilter(e.target.value)}
+                                            className="w-full sm:w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        >
+                                            <option value="">All styles</option>
+                                            {learningStyleOptions.map((s) => (
+                                                <option key={s} value={s}>
+                                                    {s}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            value={studentSort}
+                                            onChange={(e) => setStudentSort(e.target.value as typeof studentSort)}
+                                            className="w-full sm:w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        >
+                                            <option value="risk_high">Sort: Risk (high)</option>
+                                            <option value="risk_low">Sort: Risk (low)</option>
+                                            <option value="score_high">Sort: Score (high)</option>
+                                            <option value="score_low">Sort: Score (low)</option>
+                                            <option value="name_az">Sort: Name (A–Z)</option>
+                                            <option value="name_za">Sort: Name (Z–A)</option>
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setStudentSearch("");
+                                                setStudentRiskFilter("");
+                                                setStudentLearningStyleFilter("");
+                                                setStudentSort("risk_high");
+                                            }}
+                                            className="text-xs font-semibold text-blue-700 underline underline-offset-2"
+                                        >
+                                            Reset
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
@@ -1624,7 +1754,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {analytics.students?.map((student: StudentAnalytics) => (
+                                        {studentsForTable.map((student: StudentAnalytics) => (
                                             <tr key={student.id} className="group hover:bg-gray-50">
                                                 <td className="px-6 py-3 font-medium text-gray-900">
                                                     {student.name}
