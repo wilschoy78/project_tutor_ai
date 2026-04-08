@@ -371,6 +371,8 @@ class StudentService:
             progress = self.get_student_progress(uid, course_id, allow_sync=False)
 
             quiz_scores_dict = progress.get("quiz_scores", {}) or {}
+            last_synced = progress.get("last_synced")
+            has_synced_progress = last_synced is not None
             student_scores = list(quiz_scores_dict.values())
             avg_score = sum(student_scores) / len(student_scores) if student_scores else 0
 
@@ -424,7 +426,10 @@ class StudentService:
             last_ai_quiz_score = ai_quiz_entries[-1]["score"] if ai_quiz_entries else None
 
             risk_reasons: List[str] = []
-            if len(quiz_scores_dict) == 0:
+            if not has_synced_progress:
+                risk_level = "no_data"
+                risk_reasons.append("Progress not synced yet. Ask the student to run Sync My Progress.")
+            elif len(quiz_scores_dict) == 0:
                 risk_level = "no_data"
                 risk_reasons.append("No quiz attempts recorded yet.")
             else:

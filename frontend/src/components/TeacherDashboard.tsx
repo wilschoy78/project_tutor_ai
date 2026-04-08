@@ -61,6 +61,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncProgressPercent, setSyncProgressPercent] = useState<number | null>(null);
     const [syncSlowWarning, setSyncSlowWarning] = useState(false);
+    const [syncingStudentId, setSyncingStudentId] = useState<number | null>(null);
     const [lastAnalyticsSyncedAt, setLastAnalyticsSyncedAt] = useState<Date | null>(null);
     const [analyticsHighlight, setAnalyticsHighlight] = useState(false);
     const [toast, setToast] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -683,6 +684,44 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             if (!didSucceed) setSyncProgressPercent(null);
             setSyncSlowWarning(false);
             setIsSyncing(false);
+        }
+    };
+
+    const handleSyncStudentProgress = async (studentId: number) => {
+        if (syncingStudentId) return;
+        try {
+            setSyncingStudentId(studentId);
+            setToast({ tone: 'success', message: 'Syncing student progress…' });
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            const existing = analytics;
+            await chatApi.syncProgress(courseId, studentId);
+            const updated = await dashboardApi.syncAnalytics(courseId);
+            setAnalytics(updated);
+            if (existing) {
+                const before = getAnalyticsSnapshot(existing);
+                const after = getAnalyticsSnapshot(updated);
+                const parts: string[] = [];
+                parts.push(`Class avg: ${before.averageScore.toFixed(1)}% → ${after.averageScore.toFixed(1)}%`);
+                parts.push(`At risk: ${before.atRisk} → ${after.atRisk}`);
+                parts.push(`Active: ${before.activeStudents} → ${after.activeStudents}`);
+                const deltaQuizResults = after.quizzesTakenTotal - before.quizzesTakenTotal;
+                const deltaAiQuizResults = after.aiQuizzesTakenTotal - before.aiQuizzesTakenTotal;
+                const deltaCompletions = after.modulesCompletedTotal - before.modulesCompletedTotal;
+                parts.push(`New quiz results ingested: ${deltaQuizResults >= 0 ? `+${deltaQuizResults}` : String(deltaQuizResults)}`);
+                parts.push(`New completions ingested: ${deltaCompletions >= 0 ? `+${deltaCompletions}` : String(deltaCompletions)}`);
+                parts.push(`New AI quizzes ingested: ${deltaAiQuizResults >= 0 ? `+${deltaAiQuizResults}` : String(deltaAiQuizResults)}`);
+                setLastAnalyticsDetails(`Updated based on latest sync. ${parts.join(' • ')}`);
+            }
+            setToast({ tone: 'success', message: 'Student progress synced and analytics refreshed.' });
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { detail?: string } }; message?: string };
+            const detail = err.response?.data?.detail || err.message || "Failed to sync student progress.";
+            setToast({ tone: 'error', message: `Student sync failed: ${String(detail)}` });
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 4500);
+        } finally {
+            setSyncingStudentId(null);
         }
     };
 
@@ -1695,6 +1734,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                     >
                                                         View Plan
                                                     </button>
+                                                    {student.risk_level === 'no_data' && (
+                                                        <button
+                                                            onClick={() => handleSyncStudentProgress(student.id)}
+                                                            disabled={Boolean(syncingStudentId) || isSyncing || isIngesting}
+                                                            className="ml-4 text-sm text-blue-700 hover:text-blue-900 font-medium disabled:opacity-50"
+                                                            title="Fetch this student's latest progress from Moodle, then refresh class analytics."
+                                                        >
+                                                            {syncingStudentId === student.id ? "Syncing…" : "Sync"}
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => handleEditProfile(student.id, student.name)}
                                                         className="ml-4 text-sm text-gray-600 hover:text-gray-900"
