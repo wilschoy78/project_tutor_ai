@@ -60,6 +60,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [isIngesting, setIsIngesting] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncProgressPercent, setSyncProgressPercent] = useState<number | null>(null);
+    const [syncSlowWarning, setSyncSlowWarning] = useState(false);
     const [lastAnalyticsSyncedAt, setLastAnalyticsSyncedAt] = useState<Date | null>(null);
     const [analyticsHighlight, setAnalyticsHighlight] = useState(false);
     const [toast, setToast] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -577,17 +578,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const handleSync = async () => {
         const requestId = ++syncRequestIdRef.current;
         if (isSyncing) return;
+        let didSucceed = false;
         try {
             setIsSyncing(true);
             setSyncProgressPercent(5);
+            setSyncSlowWarning(false);
             if (syncProgressIntervalRef.current) window.clearInterval(syncProgressIntervalRef.current);
             if (syncTimeoutRef.current) window.clearTimeout(syncTimeoutRef.current);
 
             const startedAt = Date.now();
             syncProgressIntervalRef.current = window.setInterval(() => {
                 const elapsedMs = Date.now() - startedAt;
-                const estimatedMs = 45000;
-                const pct = Math.min(95, Math.round((elapsedMs / estimatedMs) * 95));
+                const estimatedMs = 60000;
+                const pct = Math.min(99, Math.round((elapsedMs / estimatedMs) * 99));
                 setSyncProgressPercent((prev) => {
                     if (prev === null) return pct;
                     return Math.max(prev, pct);
@@ -595,9 +598,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             }, 300);
 
             syncTimeoutRef.current = window.setTimeout(() => {
-                setToast({ tone: 'error', message: 'Sync is taking longer than expected, but is still running. Please wait…' });
-                if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-                toastTimerRef.current = window.setTimeout(() => setToast(null), 7000);
+                setSyncSlowWarning(true);
             }, 15000);
 
             const before = analytics ? getAnalyticsSnapshot(analytics) : null;
@@ -634,6 +635,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
             window.setTimeout(() => setAnalyticsHighlight(false), 1800);
             setSyncProgressPercent(100);
+            didSucceed = true;
             window.setTimeout(() => setSyncProgressPercent(null), 600);
             loadKbCoverage();
             try {
@@ -678,6 +680,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                 window.clearTimeout(syncTimeoutRef.current);
                 syncTimeoutRef.current = null;
             }
+            if (!didSucceed) setSyncProgressPercent(null);
+            setSyncSlowWarning(false);
             setIsSyncing(false);
         }
     };
@@ -1035,6 +1039,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                         style={{ width: `${syncProgressPercent}%` }}
                                     />
                                 </div>
+                                {syncSlowWarning && (
+                                    <div className="mt-2 text-[11px] text-gray-500">
+                                        Still syncing… hosted Moodle can rate-limit requests. Please wait; the dashboard will update when done.
+                                    </div>
+                                )}
                             </div>
                         )}
                         <details className="w-full text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" open={!isEmbedded}>
@@ -1100,7 +1109,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             >
                               <div className="flex items-center justify-between gap-3">
                                 <span>{toast.message}</span>
-                                {toast.tone === "error" && (
+                                {toast.tone === "error" && !isSyncing && (
                                   <button
                                     type="button"
                                     onClick={handleSync}

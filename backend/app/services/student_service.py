@@ -331,156 +331,164 @@ class StudentService:
                 continue
             filtered_users.append(user)
 
-            total_students = len(filtered_users)
-            active_students = 0 # Placeholder logic
-            
-            scores = []
-            
-            detailed_students = []
-
-            # We iterate up to 50 students for safety in this demo, but ideally paginate or handle background task
-            for user in filtered_users[:50]:
-                uid = user["id"]
-                fullname = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip()
-
-                profile = self.get_student_profile(uid)
-                progress = self.get_student_progress(uid, course_id)
-
-                quiz_scores_dict = progress.get("quiz_scores", {}) or {}
-                student_scores = list(quiz_scores_dict.values())
-                avg_score = sum(student_scores) / len(student_scores) if student_scores else 0
-
-                if len(quiz_scores_dict) > 0:
-                    active_students += 1
-                    scores.append(avg_score)
-                
-                # Dynamically calculate weaknesses based on quiz scores
-                # Group quizzes by topic (assuming format "Quiz: Topic Name" or similar)
-                topic_map = {}
-                for q_name, q_score in quiz_scores_dict.items():
-                    name = q_name
-                    if name.startswith("[AI] "):
-                        name = name[5:]
-                    
-                    # Enhanced cleaning logic
-                    # 1. Remove "Quiz:" prefix and trailing timestamps/IDs in parens
-                    base = name.split("(")[0].strip()
-                    
-                    # 2. Remove common prefixes like "1 - ", "2 - ", "Quiz 1 - "
-                    base = re.sub(r'^(?:Quiz\s*)?\d+\s*-\s*', '', base, flags=re.IGNORECASE)
-                    
-                    # 3. Remove "Quiz" or "Test" if it's the only word, or at the end
-                    base = base.replace("Pop Quiz", "General Review") # Special case for AI quizzes
-                    base = re.sub(r'\s+Quiz$', '', base, flags=re.IGNORECASE)
-                    base = re.sub(r'\s+Test$', '', base, flags=re.IGNORECASE)
-                    
-                    base = base.strip()
-                    
-                    # 4. Fallback if empty
-                    if not base or base.lower() == "general":
-                        base = "General Course Concepts"
-                    
-                    if base not in topic_map:
-                        topic_map[base] = []
-                    topic_map[base].append(float(q_score))
-                
-                calculated_weaknesses = []
-                for topic, t_scores in topic_map.items():
-                    t_avg = sum(t_scores) / len(t_scores)
-                    if t_avg < 75.0: # Threshold for weakness
-                        calculated_weaknesses.append(topic)
-                
-                # Combine with profile weaknesses if any, ensuring uniqueness
-                final_weaknesses = list(set(profile.get("weaknesses", []) + calculated_weaknesses))
-
-                ai_quiz_entries: List[Dict[str, Any]] = []
-                for q_name, q_score in quiz_scores_dict.items():
-                    if not str(q_name).startswith("[AI] "):
-                        continue
-                    m_ts = re.search(r"\((\d{9,})\)", str(q_name))
-                    ts = int(m_ts.group(1)) if m_ts else 0
-                    try:
-                        sc = float(q_score)
-                    except Exception:
-                        sc = 0.0
-                    ai_quiz_entries.append({"ts": ts, "score": sc})
-
-                ai_quiz_entries.sort(key=lambda x: x["ts"])
-                ai_quizzes_taken = len(ai_quiz_entries)
-                last_ai_quiz_ts = ai_quiz_entries[-1]["ts"] if ai_quiz_entries else None
-                last_ai_quiz_score = ai_quiz_entries[-1]["score"] if ai_quiz_entries else None
-
-                risk_reasons: List[str] = []
-                if len(quiz_scores_dict) == 0:
-                    risk_level = "no_data"
-                    risk_reasons.append("No quiz attempts recorded yet.")
-                else:
-                    if avg_score < 50.0:
-                        risk_level = "at_risk"
-                        risk_reasons.append("Low average score (< 50%).")
-                    elif avg_score < 75.0:
-                        risk_level = "needs_support"
-                        risk_reasons.append("Below mastery threshold (< 75%).")
-                    else:
-                        risk_level = "on_track"
-
-                    if ai_quizzes_taken >= 3:
-                        last3 = [x["score"] for x in ai_quiz_entries[-3:]]
-                        if last3[0] > last3[1] > last3[2]:
-                            risk_reasons.append("Declining performance trend in recent AI quizzes.")
-                            if risk_level != "at_risk":
-                                risk_level = "at_risk"
-
-                    if last_ai_quiz_ts:
-                        days_since = (time.time() - last_ai_quiz_ts) / 86400.0
-                        if days_since > 7.0:
-                            risk_reasons.append("No AI quiz activity in the last 7 days.")
-                            if risk_level == "on_track":
-                                risk_level = "needs_support"
-
-                    if calculated_weaknesses:
-                        risk_reasons.append(f"Struggling topics detected: {', '.join(calculated_weaknesses[:3])}.")
-
-                detailed_students.append({
-                    "id": uid,
-                    "name": fullname,
-                    "avg_score": round(avg_score, 1),
-                    "quiz_scores": quiz_scores_dict,
-                    "quizzes_taken": len(quiz_scores_dict),
-                    "ai_quizzes_taken": ai_quizzes_taken,
-                    "last_ai_quiz_ts": last_ai_quiz_ts,
-                    "last_ai_quiz_score": last_ai_quiz_score,
-                    "risk_level": risk_level,
-                    "risk_reasons": risk_reasons,
-                    "learning_style": profile.get("learning_style", "General"),
-                    "strengths": profile.get("strengths", []),
-                    "weaknesses": final_weaknesses
-                })
-            
-            class_average = sum(scores) / len(scores) if scores else 0
-            
-            # Aggregate weaknesses across all students
-            all_weaknesses = []
-            for s in detailed_students:
-                all_weaknesses.extend(s.get("weaknesses", []))
-            
-            from collections import Counter
-            weakness_counts = Counter(all_weaknesses).most_common(5)
-            top_weaknesses = [{"topic": topic, "count": count} for topic, count in weakness_counts]
-
+        total_students = len(filtered_users)
+        if total_students == 0:
             analytics_data = {
                 "course_id": course_id,
-                "total_students": total_students,
-                "active_students": active_students if active_students > 0 else total_students, # Fallback if no grades yet,
-                "average_score": round(class_average, 1),
-                "top_weaknesses": top_weaknesses,
-                "students": detailed_students
+                "total_students": 0,
+                "active_students": 0,
+                "average_score": 0.0,
+                "top_weaknesses": [],
+                "students": []
             }
-
-            # Save to cache
             cache_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
             self._save_json_file(cache_file, analytics_data)
+            return analytics_data
+
+        active_students = 0
+        scores: List[float] = []
+        detailed_students: List[Dict[str, Any]] = []
+
+        def get_ai_profile(student_id: int) -> Dict[str, Any]:
+            s_id = str(student_id)
+            profile = self.student_profiles.get(s_id) or {}
+            if not isinstance(profile, dict):
+                profile = {}
+            return {
+                "learning_style": profile.get("learning_style", "General"),
+                "strengths": profile.get("strengths", []) if isinstance(profile.get("strengths"), list) else [],
+                "weaknesses": profile.get("weaknesses", []) if isinstance(profile.get("weaknesses"), list) else [],
+                "interests": profile.get("interests", []) if isinstance(profile.get("interests"), list) else [],
+            }
+
+        for user in filtered_users[:50]:
+            uid = int(user.get("id") or 0)
+            fullname = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip() or f"Student {uid}"
+            profile = get_ai_profile(uid)
+            progress = self.get_student_progress(uid, course_id)
+
+            quiz_scores_dict = progress.get("quiz_scores", {}) or {}
+            student_scores = list(quiz_scores_dict.values())
+            avg_score = sum(student_scores) / len(student_scores) if student_scores else 0
+
+            if len(quiz_scores_dict) > 0:
+                active_students += 1
+                scores.append(avg_score)
+
+            topic_map = {}
+            for q_name, q_score in quiz_scores_dict.items():
+                name = q_name
+                if name.startswith("[AI] "):
+                    name = name[5:]
+
+                base = name.split("(")[0].strip()
+                base = re.sub(r'^(?:Quiz\s*)?\d+\s*-\s*', '', base, flags=re.IGNORECASE)
+                base = base.replace("Pop Quiz", "General Review")
+                base = re.sub(r'\s+Quiz$', '', base, flags=re.IGNORECASE)
+                base = re.sub(r'\s+Test$', '', base, flags=re.IGNORECASE)
+                base = base.strip()
+
+                if not base or base.lower() == "general":
+                    base = "General Course Concepts"
+
+                if base not in topic_map:
+                    topic_map[base] = []
+                topic_map[base].append(float(q_score))
+
+            calculated_weaknesses = []
+            for topic, t_scores in topic_map.items():
+                t_avg = sum(t_scores) / len(t_scores)
+                if t_avg < 75.0:
+                    calculated_weaknesses.append(topic)
+
+            final_weaknesses = list(set((profile.get("weaknesses", []) or []) + calculated_weaknesses))
+
+            ai_quiz_entries: List[Dict[str, Any]] = []
+            for q_name, q_score in quiz_scores_dict.items():
+                if not str(q_name).startswith("[AI] "):
+                    continue
+                m_ts = re.search(r"\((\d{9,})\)", str(q_name))
+                ts = int(m_ts.group(1)) if m_ts else 0
+                try:
+                    sc = float(q_score)
+                except Exception:
+                    sc = 0.0
+                ai_quiz_entries.append({"ts": ts, "score": sc})
+
+            ai_quiz_entries.sort(key=lambda x: x["ts"])
+            ai_quizzes_taken = len(ai_quiz_entries)
+            last_ai_quiz_ts = ai_quiz_entries[-1]["ts"] if ai_quiz_entries else None
+            last_ai_quiz_score = ai_quiz_entries[-1]["score"] if ai_quiz_entries else None
+
+            risk_reasons: List[str] = []
+            if len(quiz_scores_dict) == 0:
+                risk_level = "no_data"
+                risk_reasons.append("No quiz attempts recorded yet.")
+            else:
+                if avg_score < 50.0:
+                    risk_level = "at_risk"
+                    risk_reasons.append("Low average score (< 50%).")
+                elif avg_score < 75.0:
+                    risk_level = "needs_support"
+                    risk_reasons.append("Below mastery threshold (< 75%).")
+                else:
+                    risk_level = "on_track"
+
+                if ai_quizzes_taken >= 3:
+                    last3 = [x["score"] for x in ai_quiz_entries[-3:]]
+                    if last3[0] > last3[1] > last3[2]:
+                        risk_reasons.append("Declining performance trend in recent AI quizzes.")
+                        if risk_level != "at_risk":
+                            risk_level = "at_risk"
+
+                if last_ai_quiz_ts:
+                    days_since = (time.time() - last_ai_quiz_ts) / 86400.0
+                    if days_since > 7.0:
+                        risk_reasons.append("No AI quiz activity in the last 7 days.")
+                        if risk_level == "on_track":
+                            risk_level = "needs_support"
+
+                if calculated_weaknesses:
+                    risk_reasons.append(f"Struggling topics detected: {', '.join(calculated_weaknesses[:3])}.")
+
+            detailed_students.append({
+                "id": uid,
+                "name": fullname,
+                "avg_score": round(avg_score, 1),
+                "quiz_scores": quiz_scores_dict,
+                "quizzes_taken": len(quiz_scores_dict),
+                "ai_quizzes_taken": ai_quizzes_taken,
+                "last_ai_quiz_ts": last_ai_quiz_ts,
+                "last_ai_quiz_score": last_ai_quiz_score,
+                "risk_level": risk_level,
+                "risk_reasons": risk_reasons,
+                "learning_style": profile.get("learning_style", "General"),
+                "strengths": profile.get("strengths", []),
+                "weaknesses": final_weaknesses
+            })
             
+        class_average = sum(scores) / len(scores) if scores else 0.0
+
+        all_weaknesses: List[str] = []
+        for s in detailed_students:
+            all_weaknesses.extend(s.get("weaknesses", []) or [])
+
+        from collections import Counter
+        weakness_counts = Counter(all_weaknesses).most_common(5)
+        top_weaknesses = [{"topic": topic, "count": count} for topic, count in weakness_counts]
+
+        analytics_data = {
+            "course_id": course_id,
+            "total_students": total_students,
+            "active_students": active_students if active_students > 0 else total_students,
+            "average_score": round(class_average, 1),
+            "top_weaknesses": top_weaknesses,
+            "students": detailed_students
+        }
+
+        cache_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
+        self._save_json_file(cache_file, analytics_data)
+
         return analytics_data
 
     def get_course_analytics(self, course_id: int) -> Dict[str, Any]:
