@@ -2,7 +2,7 @@
 
 Capstone: **Teacher‑Tutor Generative AI using LangChain: An Open‑source Approach to Personalized Learning**  
 Owner: Wilson A. Gayo  
-Last updated: 2026‑04‑06
+Last updated: 2026‑04‑08
 
 This document tracks usability / demo‑readiness gaps discovered during Moodle block embedding and cross‑role testing, along with the implemented fixes. Each entry is framed as **Root cause → Fix idea → Implementation** so the work is academically defensible and easy to present.
 
@@ -15,6 +15,10 @@ This document tracks usability / demo‑readiness gaps discovered during Moodle 
 - Safe linking to Moodle activities implemented using **permission-aware redirects** and **public Moodle URL mapping**.
 - Sync flows now resist repeated clicks and show progress consistently.
 - Backend startup stabilized when embeddings cannot download (offline/limited network scenarios).
+- Teacher quiz bank now supports **approved quiz viewing**, and student quiz UX clarifies **topic fallback** behavior.
+- Teacher dashboard now supports **Data tab** (KB + chat DB demo), **chat log viewer** (admin-token protected), and **printable reports + CSV exports**.
+- Render deployment hardened with **persistent storage configuration** for ChromaDB, chat history SQLite, quiz bank, and analytics caches.
+- Moodle sync reliability improved with **rate-limit backoff**, reduced API calls, and clearer UI feedback on token/429 errors.
 
 ## Change Log (Root Cause → Fix Idea → Implementation)
 
@@ -195,17 +199,122 @@ Files:
 Files:
 - [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
 
+### Quizzes — Diversity, Approval, and Student Behavior
+
+23) **Root cause:** AI quiz candidate generation produced near-duplicate questions and distractors  
+**Fix idea:** Enforce diversity in generation prompt + reject duplicates/near-duplicates server-side  
+**Implementation:** Added diversity token + avoid list prompt, plus exact + near-duplicate checks across batch and saved bank.  
+Files:
+- [rag_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/rag_service.py)
+- [quiz_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/quiz_service.py)
+
+24) **Root cause:** Students couldn’t tell when a quiz was served from approved bank vs generated from course materials  
+**Fix idea:** Add a small “topic mismatch” note when fallback occurs  
+**Implementation:** Backend returns quiz metadata (`origin`, `requested_topic`, `matched_topic`); student UI shows a short note when origin is `rag`.  
+Files:
+- [chat.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/api/endpoints/chat.py)
+- [client.ts](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/api/client.ts)
+- [ChatInterface.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/ChatInterface.tsx)
+
+25) **Root cause:** Teachers approved quiz candidates but had no “published” view for verification  
+**Fix idea:** Add an Approved quizzes list  
+**Implementation:** Added `/ai/quizzes/approved` endpoint and Teacher UI tab switcher (Pending/Approved).  
+Files:
+- [chat.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/api/endpoints/chat.py)
+- [client.ts](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/api/client.ts)
+- [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
+
+26) **Root cause:** “Pop Quiz” behavior conflicted with expectations (should generate from KB; approved quizzes should be topic-driven)  
+**Fix idea:** Make Pop Quiz always RAG-based; use approved bank only for topic requests  
+**Implementation:** `/ai/quiz` now always generates a fresh KB-grounded quiz; approved quizzes are served when the student asks “give me a quiz about X”.  
+Files:
+- [chat.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/api/endpoints/chat.py)
+- [quiz_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/quiz_service.py)
+
+### Data Storage — Persistence and Admin Visibility
+
+27) **Root cause:** Panel/demo needs a clear answer: “where is the knowledge base and chat history stored?”  
+**Fix idea:** Provide persistent stores + human-viewable pages (read-only)  
+**Implementation:** Knowledge base persists in ChromaDB; chat history persists in SQLite; added admin-token protected chat-history views and a Teacher Data tab for demo flow.  
+Files:
+- [rag_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/rag_service.py)
+- [conversation_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/conversation_service.py)
+- [chat.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/api/endpoints/chat.py)
+- [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
+
+28) **Root cause:** Render restarts wipe file-based stores unless mounted to a persistent disk  
+**Fix idea:** Make persistence paths configurable via env vars and point them to the Render disk mount  
+**Implementation:** Added env-configurable paths for Chroma, SQLite, quiz bank, and analytics caches; updated compose files to pass `ADMIN_TOKEN`.  
+Files:
+- [config.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/core/config.py)
+- [rag_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/rag_service.py)
+- [conversation_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/conversation_service.py)
+- [quiz_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/quiz_service.py)
+- [student_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/student_service.py)
+- [docker-compose.yml](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/docker-compose.yml)
+- [docker-compose.vps.yml](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/deployment/docker-compose.vps.yml)
+
+### Analytics — Reliability on Hosted Moodle
+
+29) **Root cause:** Moodle token issues were hard to diagnose (silent zeros / generic errors)  
+**Fix idea:** Fail loudly and surface actionable errors in the Teacher UI  
+**Implementation:** Backend validates token presence and raises Moodle API exceptions; Teacher toast messages clearly explain missing/invalid token and rate limiting.  
+Files:
+- [moodle_client.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/moodle_client.py)
+- [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
+
+30) **Root cause:** Hosted Moodle rate-limits and permission constraints caused sync failures or long hangs  
+**Fix idea:** Backoff on 429, reduce per-student calls, and avoid restricted profile APIs during class sync  
+**Implementation:**
+- Added 429 retry/backoff in Moodle client.
+- Teacher sync reads cached progress (fast) and avoids restricted user lookup.
+- Teacher can sync an individual student’s progress on-demand to fill missing rows.  
+Files:
+- [moodle_client.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/moodle_client.py)
+- [student_service.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/services/student_service.py)
+- [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
+
+### Reporting — Print Preview and Exports
+
+31) **Root cause:** Demo needs “report artifacts” (printable evidence + exportable tables)  
+**Fix idea:** Add HTML print-preview reports (save as PDF) and CSV export without extra libraries  
+**Implementation:**
+- Teacher class report: `/dashboard/analytics/<course_id>/print`
+- Student report: `/dashboard/students/<student_id>/report?course_id=...`
+- Teacher UI: Print Preview + Export CSV in Student Performance list; per-student Report link.
+- Student UI: Print Report button (opens student report).  
+Files:
+- [dashboard.py](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/backend/app/api/endpoints/dashboard.py)
+- [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
+- [ChatInterface.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/ChatInterface.tsx)
+
+### Teacher Dashboard — Student List Controls
+
+32) **Root cause:** Teacher needs faster navigation for large classes  
+**Fix idea:** Add search + filters + sorting to Student Performance  
+**Implementation:** Added name/ID search, risk and learning-style filters, multiple sort modes, and reset.  
+Files:
+- [TeacherDashboard.tsx](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/frontend/src/components/TeacherDashboard.tsx)
+
 ## Configuration Notes (Demo-Ready)
 
 - `MOODLE_URL` is the internal Moodle base used by the backend container (e.g., `http://moodle:80`).
 - `MOODLE_PUBLIC_URL` is the browser-accessible Moodle base used for redirect links (e.g., `http://localhost:8080`).
   - Set in [docker-compose.yml](file:///Users/wilson/Desktop/2025/MIT_CIT/2026/projects/docker-compose.yml).
+- `ADMIN_TOKEN` protects read-only admin views (chat logs / JSON) and is required for the Teacher Chat Logs modal.
+- Render persistent disk (single mount) can store all persistence paths; set env vars on Render:
+  - `CHROMA_PERSIST_DIR=/app/chroma_db`
+  - `CHAT_DB_PATH=/app/chroma_db/chat_history.db`
+  - `QUIZ_DATA_DIR=/app/chroma_db/quizzes`
+  - `APP_DATA_DIR=/app/chroma_db/app_data`
 
 ## Quick Demo Script (Recommended)
 
 1. Teacher: **Refresh Content** (rebuild KB from Moodle).  
-2. Student: **Sync My Progress** (pull completion + quiz progress).  
-3. Teacher: **Sync Class Analytics** (refresh dashboard metrics).  
-4. Teacher: **Pending Quizzes → Approve** and use **Preview student view** to show “teacher review → student practice” workflow.  
-5. Teacher: **View Knowledge Base → Filters/Search → Open in Moodle → Download CSV** (documentation + verification).
-
+2. Student: **Sync My Progress** (pull quiz progress; fills cache).  
+3. Teacher: **Sync Class Analytics** (fast, cache-based analytics).  
+4. Teacher: **Student Performance → Print Preview / Export CSV** (report artifacts).  
+5. Teacher: **Quizzes → Generate Candidates → Approve** and use **Preview student view** to show teacher review → student practice.  
+6. Student: Ask “give me a quiz about MySQL” (approved bank topic match) vs click **Pop Quiz** (fresh KB-grounded).  
+7. Teacher: **Data tab → View Knowledge Base / View Chat Logs** (show persistence + transparency).  
+8. Student: **Print Report** (save as PDF) for individualized progress artifact.

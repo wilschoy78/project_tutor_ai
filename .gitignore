@@ -32,6 +32,9 @@ moodle_moodledata/
 # Logs
 *.log
 
+# Files
+files/
+
 # Personal Notes
 files/MY_NOTES.md
 files/API_KEYS.md

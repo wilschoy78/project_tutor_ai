@@ -513,7 +513,17 @@ def chat(request: ChatRequest):
             }
 
         result = rag_service.ask_question(request.course_id, request.question, request.student_id)
-        conversation_service.add_message(request.course_id, request.student_id, "assistant", result["answer"])
+        try:
+            history_payload = json.dumps(
+                {
+                    "type": "chat",
+                    "text": result.get("answer", ""),
+                    "sources": result.get("sources", []) or [],
+                }
+            )
+            conversation_service.add_message(request.course_id, request.student_id, "assistant", history_payload)
+        except Exception:
+            conversation_service.add_message(request.course_id, request.student_id, "assistant", result.get("answer", ""))
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

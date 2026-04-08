@@ -569,6 +569,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                     context: { courseId: activeCourseId, studentId: activeStudentId },
                   } as Message;
                   }
+                  if (obj.type === "chat" && typeof obj.text === "string") {
+                    const rawSources = obj.sources;
+                    const sources = Array.isArray(rawSources) ? (rawSources as ChatResponse["sources"]) : undefined;
+                    return {
+                      id: String(m.id),
+                      role: "assistant",
+                      content: obj.text,
+                      sources,
+                      context: { courseId: activeCourseId, studentId: activeStudentId },
+                    } as Message;
+                  }
                 }
               }
 
