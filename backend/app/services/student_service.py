@@ -146,7 +146,7 @@ class StudentService:
             "interests": profile.get("interests", [])
         }
 
-    def get_student_progress(self, student_id: int, course_id: int) -> Dict[str, Any]:
+    def get_student_progress(self, student_id: int, course_id: int, allow_sync: bool = True) -> Dict[str, Any]:
         """
         Fetches student grades and completion status.
         Tries to read from cache first, unless it's stale (not implemented here) or missing.
@@ -164,7 +164,10 @@ class StudentService:
                 if (time.time() - last_synced_ts) <= max_age_s:
                     return cached_data
             return cached_data
-            
+
+        if not allow_sync:
+            return {"completed_modules": [], "quiz_scores": {}, "last_synced": None}
+
         return self.sync_student_progress(student_id, course_id)
 
     def sync_student_progress(self, student_id: int, course_id: int) -> Dict[str, Any]:
@@ -365,7 +368,7 @@ class StudentService:
             uid = int(user.get("id") or 0)
             fullname = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip() or f"Student {uid}"
             profile = get_ai_profile(uid)
-            progress = self.get_student_progress(uid, course_id)
+            progress = self.get_student_progress(uid, course_id, allow_sync=False)
 
             quiz_scores_dict = progress.get("quiz_scores", {}) or {}
             student_scores = list(quiz_scores_dict.values())

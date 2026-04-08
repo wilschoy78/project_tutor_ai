@@ -158,7 +158,7 @@ export const dashboardApi = {
         return response.data;
     },
     syncAnalytics: async (courseId: number) => {
-        const response = await api.post<DashboardAnalytics>(`/dashboard/analytics/${courseId}/sync`);
+        const response = await api.post<DashboardAnalytics>(`/dashboard/analytics/${courseId}/sync`, undefined, { timeout: 120000 });
         return response.data;
     },
     setLearningPathOverrides: async (studentId: number, courseId: number, pinnedRecommendations: string[]) => {
