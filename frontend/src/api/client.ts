@@ -248,4 +248,12 @@ export const teacherApi = {
         );
         return response.data;
     },
+    clearChatHistoryAdmin: async (courseId: number, studentId: number, adminToken: string) => {
+        const response = await api.post<{ status: string; deleted: number }>(
+            '/ai/chat/history/admin/clear',
+            null,
+            { params: { course_id: courseId, student_id: studentId, admin_token: adminToken } }
+        );
+        return response.data;
+    },
 };

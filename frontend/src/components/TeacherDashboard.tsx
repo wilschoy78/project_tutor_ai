@@ -908,6 +908,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         }
     };
 
+    const handleClearChatLogs = async () => {
+        if (!chatLogStudentId) {
+            setChatLogError("Select a student to clear chat history.");
+            return;
+        }
+        const token = chatLogAdminToken.trim();
+        if (!token) {
+            setChatLogError("Enter ADMIN_TOKEN to clear chat history.");
+            return;
+        }
+        const ok = window.confirm("Clear chat history for this student in this course? This cannot be undone.");
+        if (!ok) return;
+        try {
+            setIsChatLogLoading(true);
+            setChatLogError(null);
+            const res = await teacherApi.clearChatHistoryAdmin(courseId, chatLogStudentId, token);
+            setChatLogRows([]);
+            setToast({ tone: "success", message: `Chat history cleared (${res.deleted} messages).` });
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { detail?: string } }; message?: string };
+            const detail = err.response?.data?.detail || err.message || "Failed to clear chat history.";
+            setChatLogError(String(detail));
+        } finally {
+            setIsChatLogLoading(false);
+        }
+    };
+
     const handleClearKb = async () => {
         if (!courseId) return;
         try {
@@ -2296,6 +2325,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                 >
                                     {isChatLogLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareText className="w-4 h-4" />}
                                     Load
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleClearChatLogs}
+                                    disabled={isChatLogLoading}
+                                    className="px-4 py-2 bg-white border border-red-200 text-red-700 rounded-lg text-sm font-semibold hover:bg-red-50 disabled:opacity-50"
+                                    title="Delete chat history for the selected student (demo cleanup)."
+                                >
+                                    Clear
                                 </button>
                                 {chatLogStudentId && chatLogAdminToken.trim() && (
                                     <a

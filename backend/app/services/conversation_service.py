@@ -76,5 +76,17 @@ class ConversationService:
         items.reverse()
         return items
 
+    def clear_history(self, course_id: int, student_id: int) -> int:
+        with self._lock:
+            with self._get_connection() as conn:
+                cur = conn.execute(
+                    """
+                    DELETE FROM messages
+                    WHERE course_id = ? AND student_id = ?
+                    """,
+                    (course_id, student_id),
+                )
+                return int(cur.rowcount or 0)
+
 
 conversation_service = ConversationService(db_path=settings.CHAT_DB_PATH)

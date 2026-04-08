@@ -554,6 +554,19 @@ def get_chat_history_admin(course_id: int, student_id: int, limit: int = 200, ad
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/chat/history/admin/clear")
+def clear_chat_history_admin(course_id: int, student_id: int, admin_token: Optional[str] = None):
+    if not settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="ADMIN_TOKEN is not configured")
+    if admin_token != settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+    try:
+        deleted = conversation_service.clear_history(course_id, student_id)
+        return {"status": "success", "deleted": deleted}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/chat/history/view", response_class=HTMLResponse)
 def view_chat_history(course_id: int, student_id: int, request: Request, limit: int = 200, admin_token: Optional[str] = None):
     if not settings.ADMIN_TOKEN:
