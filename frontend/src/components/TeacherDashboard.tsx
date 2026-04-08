@@ -83,7 +83,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const syncProgressIntervalRef = React.useRef<number | null>(null);
     const syncTimeoutRef = React.useRef<number | null>(null);
     const syncRequestIdRef = React.useRef(0);
-    const timedOutSyncRequestIdsRef = React.useRef<Set<number>>(new Set());
 
     // Modal State
     const [selectedStudent, setSelectedStudent] = useState<{ id: number; name: string } | null>(null);
@@ -587,8 +586,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             const startedAt = Date.now();
             syncProgressIntervalRef.current = window.setInterval(() => {
                 const elapsedMs = Date.now() - startedAt;
-                const estimatedMs = 12000;
-                const pct = Math.min(90, Math.round((elapsedMs / estimatedMs) * 90));
+                const estimatedMs = 45000;
+                const pct = Math.min(95, Math.round((elapsedMs / estimatedMs) * 95));
                 setSyncProgressPercent((prev) => {
                     if (prev === null) return pct;
                     return Math.max(prev, pct);
@@ -596,17 +595,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
             }, 300);
 
             syncTimeoutRef.current = window.setTimeout(() => {
-                timedOutSyncRequestIdsRef.current.add(requestId);
-                setIsSyncing(false);
-                setSyncProgressPercent(null);
-                setToast({ tone: 'error', message: 'Sync is taking longer than expected. Click Retry to try again.' });
+                setToast({ tone: 'error', message: 'Sync is taking longer than expected, but is still running. Please wait…' });
                 if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-                toastTimerRef.current = window.setTimeout(() => setToast(null), 4500);
+                toastTimerRef.current = window.setTimeout(() => setToast(null), 7000);
             }, 15000);
 
             const before = analytics ? getAnalyticsSnapshot(analytics) : null;
             const data = await dashboardApi.syncAnalytics(courseId);
-            if (timedOutSyncRequestIdsRef.current.has(requestId)) return;
             if (requestId !== syncRequestIdRef.current) return;
 
             setAnalytics(data);
