@@ -130,7 +130,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [isSavingProfile, setIsSavingProfile] = useState(false);
 
     // Quiz Management State
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'quizzes'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'quizzes' | 'data'>('dashboard');
     const [quizSubTab, setQuizSubTab] = useState<'pending' | 'approved'>('pending');
     const [pendingQuizzes, setPendingQuizzes] = useState<PendingQuiz[]>([]);
     const [approvedQuizzes, setApprovedQuizzes] = useState<PendingQuiz[]>([]);
@@ -1042,16 +1042,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         </button>
 
                         <button
-                            type="button"
-                            onClick={openChatLogs}
-                            className={cn(actionButtonClass("secondary"), "!w-auto flex-shrink-0")}
-                            title="View persisted chat history (SQLite) for a student and course."
-                        >
-                            <MessageSquareText className="w-4 h-4" />
-                            View Chat Logs
-                        </button>
-
-                        <button
                             onClick={handleIngest}
                             disabled={isIngesting}
                             className={cn(actionButtonClass("success"), "!w-auto flex-shrink-0")}
@@ -1224,6 +1214,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         }`}
                     >
                         Quizzes
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('data')}
+                        className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
+                            activeTab === 'data'
+                            ? 'border-indigo-600 text-indigo-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        Data
                     </button>
                 </div>
             </header>
@@ -1467,6 +1467,61 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                             })()}
                         </div>
                     </div>
+                ) : activeTab === 'data' ? (
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-gray-900">Data</h2>
+                                    <p className="text-sm text-gray-500">Single-click links for the panel demo (KB + chat database)</p>
+                                </div>
+                                <div className="text-xs text-gray-500 text-right">
+                                    <div>KB: ChromaDB (persisted)</div>
+                                    <div>Chat: SQLite (persisted)</div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleViewKb}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50"
+                                >
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                                        <BookOpen className="w-4 h-4 text-indigo-600" />
+                                        View Knowledge Base
+                                    </span>
+                                    <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
+                                        Open
+                                    </span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={openChatLogs}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50"
+                                >
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                                        <MessageSquareText className="w-4 h-4 text-indigo-600" />
+                                        View Chat Logs
+                                    </span>
+                                    <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
+                                        Open
+                                    </span>
+                                </button>
+                            </div>
+
+                            <div className="mt-3 text-xs text-gray-500">
+                                Suggested demo flow: Refresh Content → View Knowledge Base → Student asks question → View Chat Logs (stored messages).
+                            </div>
+
+                            {!analytics && (
+                                <div className="mt-3 text-xs text-gray-500">
+                                    Tip: Run Sync Class Analytics first to load the student list for the Chat Logs modal.
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 ) : (
                 isLoading ? (
                     <div className="text-center py-20 text-gray-500">Loading analytics...</div>
@@ -1530,53 +1585,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                 </div>
                             </div>
                           </div>
-                        </div>
-
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <h2 className="text-lg font-semibold text-gray-900">Data</h2>
-                                    <p className="text-sm text-gray-500">Single-click links for the panel demo (KB + chat database)</p>
-                                </div>
-                                <div className="text-xs text-gray-500 text-right">
-                                    <div>KB: ChromaDB (persisted)</div>
-                                    <div>Chat: SQLite (persisted)</div>
-                                </div>
-                            </div>
-
-                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <button
-                                    type="button"
-                                    onClick={handleViewKb}
-                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50"
-                                >
-                                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                                        <BookOpen className="w-4 h-4 text-indigo-600" />
-                                        View Knowledge Base
-                                    </span>
-                                    <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
-                                        Open
-                                    </span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={openChatLogs}
-                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50"
-                                >
-                                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                                        <MessageSquareText className="w-4 h-4 text-indigo-600" />
-                                        View Chat Logs
-                                    </span>
-                                    <span className="text-xs font-semibold text-blue-700 underline underline-offset-2">
-                                        Open
-                                    </span>
-                                </button>
-                            </div>
-
-                            <div className="mt-3 text-xs text-gray-500">
-                                Suggested demo flow: Refresh Content → View Knowledge Base → Student asks question → View Chat Logs (stored messages).
-                            </div>
                         </div>
 
                         {/* Top Weaknesses */}
