@@ -149,6 +149,7 @@ export interface DashboardAnalytics {
     average_score: number;
     active_students?: number;
     top_weaknesses?: { topic: string; count: number }[];
+    risk_thresholds?: { low: number; high: number };
     students: StudentAnalytics[];
 }
 
@@ -159,6 +160,14 @@ export const dashboardApi = {
     },
     syncAnalytics: async (courseId: number) => {
         const response = await api.post<DashboardAnalytics>(`/dashboard/analytics/${courseId}/sync`, undefined, { timeout: 120000 });
+        return response.data;
+    },
+    getRiskThresholds: async (courseId: number) => {
+        const response = await api.get<{ low: number; high: number }>(`/dashboard/analytics/${courseId}/thresholds`);
+        return response.data;
+    },
+    setRiskThresholds: async (courseId: number, low: number, high: number) => {
+        const response = await api.post<{ low: number; high: number }>(`/dashboard/analytics/${courseId}/thresholds`, { low, high });
         return response.data;
     },
     setLearningPathOverrides: async (studentId: number, courseId: number, pinnedRecommendations: string[]) => {

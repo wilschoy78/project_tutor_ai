@@ -10,6 +10,11 @@ from app.core.config import settings
 router = APIRouter()
 
 
+class RiskThresholdsUpdate(BaseModel):
+    low: float
+    high: float
+
+
 @router.get("/analytics/{course_id}", response_model=Dict[str, Any])
 def get_course_analytics(course_id: int):
     try:
@@ -25,6 +30,24 @@ def sync_course_analytics(course_id: int):
         analytics = student_service.sync_course_analytics(course_id)
         rag_service.ingest_analytics_summary(course_id, analytics)
         return analytics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/{course_id}/thresholds", response_model=Dict[str, Any])
+def get_risk_thresholds(course_id: int):
+    try:
+        return student_service.get_risk_thresholds(course_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analytics/{course_id}/thresholds", response_model=Dict[str, Any])
+def set_risk_thresholds(course_id: int, payload: RiskThresholdsUpdate):
+    try:
+        return student_service.set_risk_thresholds(course_id, payload.low, payload.high)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -51,6 +74,16 @@ def print_course_analytics(course_id: int, request: Request):
         if not isinstance(top_weaknesses, list):
             top_weaknesses = []
 
+        thresholds = analytics.get("risk_thresholds") or {}
+        try:
+            low_threshold = float(thresholds.get("low", 50.0))
+        except Exception:
+            low_threshold = 50.0
+        try:
+            high_threshold = float(thresholds.get("high", 75.0))
+        except Exception:
+            high_threshold = 75.0
+
         def risk_label(s: Dict[str, Any]) -> str:
             rl = str(s.get("risk_level") or "").strip().lower()
             if rl in {"at_risk", "needs_support", "on_track", "no_data"}:
@@ -59,9 +92,9 @@ def print_course_analytics(course_id: int, request: Request):
                 score = float(s.get("avg_score") or 0.0)
             except Exception:
                 score = 0.0
-            if score >= 80:
+            if score >= high_threshold:
                 return "On Track"
-            if score >= 50:
+            if score >= low_threshold:
                 return "Needs Support"
             return "At Risk"
 

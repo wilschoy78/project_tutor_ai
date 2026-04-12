@@ -19,6 +19,8 @@ os.makedirs(PROGRESS_DIR, exist_ok=True)
 AI_GRADES_FILE = os.path.join(DATA_DIR, "ai_grades.json")
 STUDENT_PROFILES_FILE = os.path.join(DATA_DIR, "student_profiles.json")
 LEARNING_PATH_OVERRIDES_FILE = os.path.join(DATA_DIR, "learning_path_overrides.json")
+RISK_THRESHOLDS_DIR = os.path.join(DATA_DIR, "risk_thresholds")
+os.makedirs(RISK_THRESHOLDS_DIR, exist_ok=True)
 
 
 class StudentService:
@@ -61,6 +63,33 @@ class StudentService:
 
     def _save_learning_path_overrides(self):
         self._save_json_file(LEARNING_PATH_OVERRIDES_FILE, self.learning_path_overrides)
+
+    def get_risk_thresholds(self, course_id: int) -> Dict[str, Any]:
+        filepath = os.path.join(RISK_THRESHOLDS_DIR, f"course_{course_id}.json")
+        data = self._load_json_file(filepath) if os.path.exists(filepath) else {}
+        try:
+            low = float(data.get("low", 50.0))
+        except Exception:
+            low = 50.0
+        try:
+            high = float(data.get("high", 75.0))
+        except Exception:
+            high = 75.0
+        low = max(0.0, min(100.0, low))
+        high = max(0.0, min(100.0, high))
+        if low >= high:
+            low, high = 50.0, 75.0
+        return {"low": low, "high": high}
+
+    def set_risk_thresholds(self, course_id: int, low: float, high: float) -> Dict[str, Any]:
+        low_v = max(0.0, min(100.0, float(low)))
+        high_v = max(0.0, min(100.0, float(high)))
+        if low_v >= high_v:
+            raise ValueError("low must be less than high")
+        filepath = os.path.join(RISK_THRESHOLDS_DIR, f"course_{course_id}.json")
+        data = {"low": low_v, "high": high_v}
+        self._save_json_file(filepath, data)
+        return data
 
     def get_learning_path_overrides(self, student_id: int, course_id: int) -> Dict[str, Any]:
         s_id = str(student_id)
@@ -336,12 +365,14 @@ class StudentService:
 
         total_students = len(filtered_users)
         if total_students == 0:
+            thresholds = self.get_risk_thresholds(course_id)
             analytics_data = {
                 "course_id": course_id,
                 "total_students": 0,
                 "active_students": 0,
                 "average_score": 0.0,
                 "top_weaknesses": [],
+                "risk_thresholds": thresholds,
                 "students": []
             }
             cache_file = os.path.join(ANALYTICS_DIR, f"course_{course_id}.json")
@@ -351,6 +382,9 @@ class StudentService:
         active_students = 0
         scores: List[float] = []
         detailed_students: List[Dict[str, Any]] = []
+        thresholds = self.get_risk_thresholds(course_id)
+        low_threshold = float(thresholds.get("low", 50.0))
+        high_threshold = float(thresholds.get("high", 75.0))
 
         def get_ai_profile(student_id: int) -> Dict[str, Any]:
             s_id = str(student_id)
@@ -433,12 +467,12 @@ class StudentService:
                 risk_level = "no_data"
                 risk_reasons.append("No quiz attempts recorded yet.")
             else:
-                if avg_score < 50.0:
+                if avg_score < low_threshold:
                     risk_level = "at_risk"
-                    risk_reasons.append("Low average score (< 50%).")
-                elif avg_score < 75.0:
+                    risk_reasons.append(f"Low average score (< {low_threshold:.0f}%).")
+                elif avg_score < high_threshold:
                     risk_level = "needs_support"
-                    risk_reasons.append("Below mastery threshold (< 75%).")
+                    risk_reasons.append(f"Below mastery threshold (< {high_threshold:.0f}%).")
                 else:
                     risk_level = "on_track"
 
@@ -491,6 +525,7 @@ class StudentService:
             "active_students": active_students if active_students > 0 else total_students,
             "average_score": round(class_average, 1),
             "top_weaknesses": top_weaknesses,
+            "risk_thresholds": {"low": low_threshold, "high": high_threshold},
             "students": detailed_students
         }
 

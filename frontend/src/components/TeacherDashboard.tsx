@@ -146,6 +146,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
     const [studentSort, setStudentSort] = useState<
         "name_az" | "name_za" | "score_high" | "score_low" | "risk_high" | "risk_low"
     >("risk_high");
+    const [riskLow, setRiskLow] = useState(50);
+    const [riskHigh, setRiskHigh] = useState(75);
+    const [isSavingRiskThresholds, setIsSavingRiskThresholds] = useState(false);
+    const [riskThresholdError, setRiskThresholdError] = useState<string | null>(null);
 
     useEffect(() => {
         if (initialCourseId) {
@@ -478,6 +482,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         }
     }, [analytics, previewStudentId]);
 
+    useEffect(() => {
+        const low = analytics?.risk_thresholds?.low;
+        const high = analytics?.risk_thresholds?.high;
+        if (typeof low === "number" && typeof high === "number") {
+            setRiskLow(Math.round(low));
+            setRiskHigh(Math.round(high));
+        }
+    }, [analytics?.risk_thresholds?.low, analytics?.risk_thresholds?.high]);
+
     const learningStyleOptions = React.useMemo(() => {
         const list = analytics?.students || [];
         const styles = Array.from(new Set(list.map((s) => String(s.learning_style || "General"))));
@@ -492,8 +505,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         const getRisk = (s: StudentAnalytics) => {
             if (s.risk_level) return s.risk_level;
             const score = Number(s.avg_score) || 0;
-            if (score >= 80) return "on_track";
-            if (score >= 50) return "needs_support";
+            if (score >= riskHigh) return "on_track";
+            if (score >= riskLow) return "needs_support";
             return "at_risk";
         };
 
@@ -537,7 +550,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         });
 
         return filtered;
-    }, [analytics, studentSearch, studentRiskFilter, studentLearningStyleFilter, studentSort]);
+    }, [analytics, studentSearch, studentRiskFilter, studentLearningStyleFilter, studentSort, riskLow, riskHigh]);
 
     const exportStudentsCsv = () => {
         const rows = studentsForTable;
@@ -591,6 +604,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
         const base = api.defaults.baseURL || "/api/v1";
         const url = `${base}/dashboard/students/${encodeURIComponent(String(studentId))}/report?course_id=${encodeURIComponent(String(courseId))}`;
         window.open(url, "_blank", "noopener,noreferrer");
+    };
+
+    const saveRiskThresholds = async () => {
+        const low = Math.max(0, Math.min(100, Number(riskLow)));
+        const high = Math.max(0, Math.min(100, Number(riskHigh)));
+        if (!Number.isFinite(low) || !Number.isFinite(high)) {
+            setRiskThresholdError("Thresholds must be valid numbers.");
+            return;
+        }
+        if (low >= high) {
+            setRiskThresholdError("Low threshold must be less than high threshold.");
+            return;
+        }
+        try {
+            setIsSavingRiskThresholds(true);
+            setRiskThresholdError(null);
+            await dashboardApi.setRiskThresholds(courseId, low, high);
+            const updated = await dashboardApi.syncAnalytics(courseId);
+            setAnalytics(updated);
+            setToast({ tone: "success", message: `Risk thresholds updated (Low ${low}% • High ${high}%).` });
+            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { detail?: string } }; message?: string };
+            const detail = err.response?.data?.detail || err.message || "Failed to update thresholds.";
+            setRiskThresholdError(String(detail));
+        } finally {
+            setIsSavingRiskThresholds(false);
+        }
     };
 
     const handleApproveQuiz = async (quizId: string) => {
@@ -1839,6 +1881,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                     </div>
                                 </div>
                             </div>
+                            <div className="px-6 pb-4 border-b border-gray-100">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="text-xs font-semibold text-gray-600">Risk thresholds (average score)</div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500">Low</span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={100}
+                                                value={riskLow}
+                                                onChange={(e) => setRiskLow(Number(e.target.value))}
+                                                className="w-20 px-2 py-1 border border-gray-300 rounded-md text-sm"
+                                            />
+                                            <span className="text-xs text-gray-500">High</span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={100}
+                                                value={riskHigh}
+                                                onChange={(e) => setRiskHigh(Number(e.target.value))}
+                                                className="w-20 px-2 py-1 border border-gray-300 rounded-md text-sm"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={saveRiskThresholds}
+                                            disabled={isSavingRiskThresholds || isSyncing || isIngesting}
+                                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                                        >
+                                            {isSavingRiskThresholds ? "Saving…" : "Save"}
+                                        </button>
+                                    </div>
+                                </div>
+                                {riskThresholdError && (
+                                    <div className="mt-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                        {riskThresholdError}
+                                    </div>
+                                )}
+                            </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
                                     <thead>
@@ -1943,10 +2025,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                                                             label = "At Risk";
                                                             classes = "bg-red-50 text-red-700 border-red-200";
                                                         } else {
-                                                            if (score >= 80) {
+                                                            if (score >= riskHigh) {
                                                                 label = "On Track";
                                                                 classes = "bg-green-50 text-green-700 border-green-200";
-                                                            } else if (score >= 50) {
+                                                            } else if (score >= riskLow) {
                                                                 label = "Needs Support";
                                                                 classes = "bg-yellow-50 text-yellow-700 border-yellow-200";
                                                             }
