@@ -1,18 +1,43 @@
 import axios from 'axios';
 
-// Use relative path for production (reverse proxy) or env var for development
-const getBaseUrl = () => {
-    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-    
-    // Check if running under /lms path (production deployment)
-    if (window.location.pathname.startsWith('/lms')) {
-        return '/lms/api/v1';
+const DEMO_BACKEND_API = 'https://teacher-tutor-ai.onrender.com/api/v1';
+
+const normalizeApiBase = (rawBase: string) => {
+    const trimmed = rawBase.trim();
+    if (!trimmed) return '/api/v1';
+
+    const noTrailingSlash = trimmed.replace(/\/+$/, '');
+
+    // Keep explicit API version paths as-is.
+    if (/\/api\/v\d+$/i.test(noTrailingSlash)) return noTrailingSlash;
+
+    // Root host URL gets defaulted to the v1 API path.
+    if (/^https?:\/\//i.test(noTrailingSlash)) return `${noTrailingSlash}/api/v1`;
+
+    return noTrailingSlash;
+};
+
+export const getApiBaseUrl = () => {
+    if (typeof window === 'undefined') {
+        return import.meta.env.VITE_API_URL ? normalizeApiBase(import.meta.env.VITE_API_URL) : '/api/v1';
     }
-    
+
+    const params = new URLSearchParams(window.location.search);
+    const queryApiBase = params.get('apiBase') || params.get('api_url');
+    if (queryApiBase) return normalizeApiBase(queryApiBase);
+
+    if (import.meta.env.VITE_API_URL) return normalizeApiBase(import.meta.env.VITE_API_URL);
+
+    // For Moodle demo host, force Render backend to make API routing explicit.
+    if (window.location.hostname.includes('bcccs.octanity.net')) return DEMO_BACKEND_API;
+
+    if (window.location.pathname.startsWith('/lms')) return '/lms/api/v1';
+
     return '/api/v1';
 };
 
-const API_URL = getBaseUrl();
+const API_URL = getApiBaseUrl();
+export const API_BASE_URL = API_URL;
 
 export const api = axios.create({
   baseURL: API_URL,

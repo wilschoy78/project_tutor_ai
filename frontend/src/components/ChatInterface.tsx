@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, BookOpen, Loader2, User, Bot, BrainCircuit, RefreshCw, MessageSquareText, Link as LinkIcon, FileText, ClipboardList, HelpCircle, Database, Maximize2, ChevronLeft, ChevronRight, FileQuestion } from 'lucide-react';
-import { api, chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
+import { API_BASE_URL, api, chatApi, moodleApi, type ChatResponse, type QuizResponse, type MoodleCourse } from '../api/client';
 import { actionButtonClass, cn } from '../lib/utils';
 import { SimpleMarkdown } from "./SimpleMarkdown";
 
@@ -1277,6 +1277,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
           <div>
             <h1 className="text-xl font-bold text-gray-900">AI Tutor</h1>
             <p className="text-xs text-gray-500">Powered by Moodle & LangChain</p>
+            <p className="text-[11px] text-gray-400 truncate max-w-[90vw] sm:max-w-[520px]" title={API_BASE_URL}>API: {API_BASE_URL}</p>
             <div className="mt-1">
               <span
                 className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border bg-blue-50 border-blue-200 text-blue-800"
@@ -1556,6 +1557,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialCourseId, i
                 </div>
               </>
             )}
+            <div className="w-full text-[11px] text-gray-400 truncate" title={API_BASE_URL}>
+              Backend API: {API_BASE_URL}
+            </div>
             {progressSummary && (
               <div className="w-full bg-white border border-gray-200 rounded-xl px-3 py-3">
                 <div className="flex items-center justify-between gap-3">

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Users, BookOpen, Activity, BarChart3, X, Loader2, Database, RefreshCw, BrainCircuit, AlertTriangle, CheckCircle, XCircle, FileQuestion, HelpCircle, Maximize2, ChevronLeft, ChevronRight, MessageSquareText } from 'lucide-react';
 import {
+    API_BASE_URL,
     api,
     dashboardApi,
     chatApi,
@@ -1084,6 +1085,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ initialCours
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">Teacher Dashboard</h1>
                             <p className="text-sm text-gray-500">Monitor student progress and AI interactions</p>
+                            <p className="text-[11px] text-gray-400 truncate max-w-[90vw] sm:max-w-[560px]" title={API_BASE_URL}>API: {API_BASE_URL}</p>
                             <div className="mt-1">
                                 <span
                                     className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border bg-indigo-50 border-indigo-200 text-indigo-800"
